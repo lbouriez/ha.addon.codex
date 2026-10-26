@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Real daemon install/start/version/stop/restart smoke tests as the unprivileged runtime user, with networking disabled and no account credentials. CI also runs them under the shipped AppArmor profile.
+- Capture daemon and AppArmor denial diagnostics when a confined startup fails.
 
 ## [0.4.0] - 2026-10-26
 

@@ -28,5 +28,10 @@ try:
     assert daemon('start')['status'] == 'started'
     assert daemon('version')['status'] == 'running'
     print('PASS daemon install, start, version, stop and restart as UID 22000')
+except Exception:
+    for log in (home / 'app-server-daemon').glob('*.log'):
+        print(log.name + ':\n' + log.read_text(errors='replace')[-8000:], flush=True)
+    subprocess.run(['ps', '-p', str(os.getpid()), '-o', 'stat=', '-o', 'lstart='])
+    raise
 finally:
     daemon('stop')

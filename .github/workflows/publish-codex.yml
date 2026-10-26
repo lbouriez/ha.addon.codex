@@ -106,7 +106,9 @@ jobs:
         run: python scripts/smoke.py "$TEST_IMAGE"
       - name: Unload test AppArmor profile
         if: always()
-        run: sudo apparmor_parser -R codex/apparmor.txt
+        run: |
+          sudo dmesg | grep -E 'apparmor="DENIED".*profile="codex"' || true
+          sudo apparmor_parser -R codex/apparmor.txt
       - name: Publish tested image
         if: github.repository == 'lbouriez/ha.addon.codex' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: home-assistant/builder/actions/build-image@2026.09.0
