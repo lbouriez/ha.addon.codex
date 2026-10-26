@@ -10,6 +10,19 @@ if [[ "$font_size" -lt 10 || "$font_size" -gt 24 ]]; then
 fi
 
 theme="$(jq -r '.terminal_theme // "dark"' /data/options.json)"
+terminal_scrollback="$(jq -r '.terminal_scrollback // 10000' /data/options.json)"
+case "$terminal_scrollback" in
+  *[!0-9]*|'') terminal_scrollback=10000 ;;
+esac
+if [[ "$terminal_scrollback" -lt 1000 || "$terminal_scrollback" -gt 50000 ]]; then
+  terminal_scrollback=10000
+fi
+preserve_terminal_history="$(jq -r 'if .preserve_terminal_history == null then true else .preserve_terminal_history end' /data/options.json)"
+reasoning_effort="$(jq -r '.reasoning_effort // "default"' /data/options.json)"
+case "$reasoning_effort" in
+  default|low|medium|high|xhigh|max|ultra) ;;
+  *) reasoning_effort=default ;;
+esac
 session_persist="$(jq -r '.session_persistence // false' /data/options.json)"
 yolo_mode="$(jq -r '.yolo_mode // false' /data/options.json)"
 work_dir="$(jq -r '.working_directory // "/homeassistant"' /data/options.json)"
@@ -41,6 +54,9 @@ export CODEX_MANAGED_ROOT="/data/codex-managed"
 export CODEX_WORK_DIR="$work_dir"
 export CODEX_SESSION_PERSIST="$session_persist"
 export CODEX_YOLO_MODE="$yolo_mode"
+export CODEX_TERMINAL_SCROLLBACK="$terminal_scrollback"
+export CODEX_PRESERVE_TERMINAL_HISTORY="$preserve_terminal_history"
+export CODEX_REASONING_EFFORT="$reasoning_effort"
 export CODEX_ENABLE_MCP="$enable_mcp"
 export CODEX_DEFAULT_MODEL="$default_model"
 export CODEX_PERMISSIONS="$codex_permissions"
@@ -153,7 +169,10 @@ ha-api core GET /states
 ha-api core GET /config
 ha-api supervisor GET /core/info
 ha-api supervisor GET /core/logs
-ha-api supervisor POST /core/check
+ha-api check
+ha-api reload automation
+# Only after the user requests a restart (checks configuration first):
+ha-api restart
 printf '%s' '{"type":"get_states"}' | ha-api ws
 printf '%s' '{"type":"config/entity_registry/list"}' | ha-api ws
 printf '%s' '{"type":"subscribe_events","event_type":"state_changed"}' | ha-api ws --follow
@@ -164,7 +183,7 @@ POST/PUT/PATCH requests accept JSON on stdin. For example, call a service only w
 Use the scoped Supervisor API for core checks, logs and management. The bare `ha` CLI is not preauthenticated; use `ha-api` rather than looking for credentials. Supervisor enforces the App's configured API role.
 The Supervisor token stays outside the interactive shell and Codex config. `ha-api` and the MCP bridge use a fixed-destination privileged helper; do not read, copy, or print credentials.
 
-Before editing configuration, inspect the real files and entities. Preserve unrelated settings, validate with `ha-api supervisor POST /core/check`, and verify the relevant entities after an authorized reload or restart. Use supported HA APIs or UI for UI-managed settings; do not edit `.storage` JSON directly. File access is limited to mapped directories and is not host/VM root access.
+Before editing configuration, inspect the real files and entities. Preserve unrelated settings, validate with `ha-api check`, and verify the relevant entities after an authorized reload or restart. Prefer `ha-api reload <domain>` and `ha-api restart`: these shortcuts refuse to act unless a fresh configuration check succeeds. They do not add an authorization boundary to the general API. Use supported HA APIs or UI for UI-managed settings; do not edit `.storage` JSON directly. File access is limited to mapped directories and is not host/VM root access.
 
 ## Reading Home Assistant Logs
 
@@ -225,19 +244,22 @@ if ! timeout 20 /usr/local/bin/codex-ha-helper status; then
 fi
 
 if [[ "$theme" == "dark" ]]; then
-  colors='background=#1e1e2e,foreground=#cdd6f4,cursor=#f5e0dc'
+  colors='{"background":"#1e1e2e","foreground":"#cdd6f4","cursor":"#f5e0dc"}'
 else
-  colors='background=#eff1f5,foreground=#4c4f69,cursor=#dc8a78'
+  colors='{"background":"#eff1f5","foreground":"#4c4f69","cursor":"#dc8a78"}'
 fi
 
 exec ttyd \
   --debug 3 \
   --port 7681 \
   --writable \
+  --index /usr/share/codex/terminal.html \
   --ping-interval 30 \
   --max-clients 5 \
   -t "fontSize=${font_size}" \
   -t fontFamily=Monaco,Consolas,monospace \
-  -t scrollback=5000 \
+  -t "scrollback=${terminal_scrollback}" \
+  -t "disableLeaveAlert=${session_persist}" \
+  -t macOptionClickForcesSelection=true \
   -t "theme=${colors}" \
   /usr/local/bin/codex-session

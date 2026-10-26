@@ -104,6 +104,25 @@ jobs:
           TEST_IMAGE: ${{ matrix.image }}:test-${{ github.sha }}
           CODEX_TEST_APPARMOR: codex
         run: python scripts/smoke.py "$TEST_IMAGE"
+      - uses: actions/setup-node@v6
+        if: matrix.arch == 'amd64'
+        with:
+          node-version: '24'
+      - name: Test browser clipboard and terminal UI
+        if: matrix.arch == 'amd64'
+        working-directory: codex/terminal
+        env:
+          TEST_IMAGE: ${{ matrix.image }}:test-${{ github.sha }}
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm test
+      - name: Upload browser evidence
+        if: always() && matrix.arch == 'amd64'
+        uses: actions/upload-artifact@v6
+        with:
+          name: terminal-browser
+          path: codex/terminal/test-results/
       - name: Unload test AppArmor profile
         if: always()
         run: |

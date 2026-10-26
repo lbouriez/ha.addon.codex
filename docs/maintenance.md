@@ -22,6 +22,14 @@ user, terminal startup, MCP enabled/disabled, and legacy model migration.
 The real terminal launcher is also exercised with a harmless fake CLI to verify
 YOLO on/off argument propagation and that tmux keeps work running through a
 simulated client disconnect and reattaches to the same process.
+The AMD64 job also runs Chromium against the built ttyd image under an ingress
+path, including native clipboard shortcuts, iframe clipboard denial/fallback,
+Unicode and multiline paste, history export, selection, responsive layout and
+reconnection. Screenshots are retained as workflow artifacts. Run locally with
+`cd codex/terminal`, `npm ci`, `npx playwright install chromium`, then
+`TEST_IMAGE=<local-image> npm test` (set the environment variable using your shell).
+The toolbar is injected into the checksum-pinned ttyd HTML during image build;
+the build fails if the expected public `window.term` API disappears.
 A disposable mock Supervisor also exercises the real unprivileged helpers:
 official MCP initialization/tools/resources/prompts, REST, WebSocket queries and
 subscriptions, configuration checks, file writes and credential isolation.
@@ -65,8 +73,10 @@ version embedded in the Dockerfile; that is a deliberate reviewed release step.
 
 The smoke tests use a fixture token against an isolated mock Supervisor and make
 no model requests or real HA calls. They do not
-validate your ChatGPT entitlement, device login, real HA service calls, browser
-interaction or the full Supervisor environment on a running HA OS VM. The
+validate your ChatGPT entitlement, device login, real HA service calls, or the
+full Supervisor environment on a running HA OS VM. Browser tests use Chromium;
+Safari, mobile operating-system clipboard menus and your actual HA ingress still
+need installation verification. The
 terminal and daemon tests enforce AppArmor on CI runners; the HA protocol fixture uses Docker defaults.
 Confirm those after installing. Switching from a separately installed upstream
 repository creates a separate HA add-on identity; back up existing Codex state

@@ -136,6 +136,8 @@ session_env=(
   "CODEX_PERMISSIONS=$codex_permissions"
   "CODEX_APPROVAL_POLICY=$codex_approval_policy"
   "CODEX_YOLO_MODE=${CODEX_YOLO_MODE:-false}"
+  "CODEX_REASONING_EFFORT=${CODEX_REASONING_EFFORT:-default}"
+  "CODEX_PRESERVE_TERMINAL_HISTORY=${CODEX_PRESERVE_TERMINAL_HISTORY:-true}"
   "CODEX_USER_ID=$safe_user"
   "CODEX_WORK_DIR=$work_dir"
   "LOGNAME=$system_user"
@@ -149,13 +151,23 @@ session_env=(
 )
 
 if [[ "$session_persist" == "true" ]]; then
+  # Configure before creating a pane, since history-limit applies to new panes.
+  tmux_config="${user_root}/tmux.conf"
+  {
+    cat /etc/tmux.conf
+    printf '\nset -g history-limit %s\n' "${CODEX_TERMINAL_SCROLLBACK:-10000}"
+    if [[ "${CODEX_PRESERVE_TERMINAL_HISTORY:-true}" == "true" ]]; then
+      printf 'set -g alternate-screen off\n'
+    fi
+  } > "$tmux_config"
+  chown "$session_uid:$session_gid" "$tmux_config"
   tmux_socket="${user_root}/tmux.sock"
   if [[ -e "$tmux_socket" && ! -S "$tmux_socket" ]]; then
     rm -f "$tmux_socket" || true
   fi
 
   su-exec "$session_uid:$session_gid" env "${session_env[@]}" \
-    tmux -S "$tmux_socket" new-session -A -s codex -c "$work_dir" \
+    tmux -f "$tmux_config" -S "$tmux_socket" new-session -A -s codex -c "$work_dir" \
     "exec /usr/local/bin/codex-shell"
   tmux_status=$?
 

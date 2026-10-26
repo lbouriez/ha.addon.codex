@@ -152,10 +152,42 @@ def read_token():
     return token
 
 
+def maintenance(token, args):
+    """Convenience operations; the general API remains available to the user."""
+    action = args[0]
+    domains = {"automation", "script", "scene", "group", "template", "core"}
+    if action == "reload":
+        if len(args) != 2 or args[1] not in domains:
+            raise ValueError("Use ha-api reload automation|script|scene|group|template|core")
+    elif len(args) != 1:
+        raise ValueError("Unexpected maintenance arguments")
+    check = request_api(token, "supervisor", "POST", "/core/check", timeout=120)
+    if json.loads(check).get("result") != "ok":
+        raise ValueError("HA configuration check failed; action cancelled")
+    if action == "check":
+        return check
+    if action == "restart":
+        result = request_api(token, "supervisor", "POST", "/core/restart", timeout=120)
+        if json.loads(result).get("result") != "ok":
+            raise ValueError("HA restart failed")
+        return result
+    domain = "homeassistant" if args[1] == "core" else args[1]
+    service = "reload_core_config" if args[1] == "core" else "reload"
+    return request_api(token, "core", "POST", f"/services/{domain}/{service}", payload={})
+
+
 def main(args):
+    if args == ["--help"]:
+        print("ha-api status | check | reload automation|script|scene|group|template|core | restart\n"
+              "ha-api core METHOD /path | supervisor METHOD /path | ws [--follow]\n"
+              "Reload and restart run a fresh configuration check first. JSON bodies use stdin.")
+        return 0
     if not args:
-        raise ValueError("Use ha-api status | core METHOD /path | supervisor METHOD /path | ws")
+        raise ValueError("Use ha-api --help")
     token = read_token()
+    if args[0] in ("check", "reload", "restart"):
+        print(maintenance(token, args))
+        return 0
     if args[0] in ("status", "mcp"):
         if len(args) != 1:
             raise ValueError("Unexpected arguments")

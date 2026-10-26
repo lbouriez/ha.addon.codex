@@ -6,3 +6,7 @@ translations/
 __pycache__/
 **/__pycache__/
 *.pyc
+terminal/node_modules/
+terminal/*.test.mjs
+terminal/package*.json
+terminal/test-results/

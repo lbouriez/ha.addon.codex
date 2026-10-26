@@ -28,6 +28,12 @@ repair_codex_config() {
 if command -v codex >/dev/null 2>&1; then
   codex_command="$(/usr/local/bin/codex-select-cli)"
   codex_args=()
+  if [[ "${CODEX_PRESERVE_TERMINAL_HISTORY:-true}" == "true" ]]; then
+    codex_args+=(--no-alt-screen)
+  fi
+  if [[ "${CODEX_REASONING_EFFORT:-default}" != "default" ]]; then
+    codex_args+=(-c "model_reasoning_effort=\"${CODEX_REASONING_EFFORT}\"")
+  fi
   if [[ "${CODEX_YOLO_MODE:-false}" == "true" ]]; then
     codex_args+=(--dangerously-bypass-approvals-and-sandbox)
   fi

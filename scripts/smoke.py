@@ -100,6 +100,8 @@ def main(image):
         else:
             options.pop('yolo_mode', None)  # Existing pre-YOLO installations.
         options['session_persistence'] = enabled
+        if enabled:
+            options.update(reasoning_effort='high', terminal_scrollback=20000, preserve_terminal_history=True)
         options['default_model'] = 'gpt-5.4'
         try:
             profile = os.environ.get('CODEX_TEST_APPARMOR')

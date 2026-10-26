@@ -38,6 +38,9 @@ async def main():
     assert json.loads(call('core', 'GET', '/states'))[0]['state'] == '21'
     assert 'fixture log entry' in call('supervisor', 'GET', '/core/logs')
     assert json.loads(call('supervisor', 'POST', '/core/check'))['result'] == 'ok'
+    assert json.loads(call('check'))['result'] == 'ok'
+    assert json.loads(call('reload', 'automation')) == []
+    assert json.loads(call('restart'))['result'] == 'ok'
     assert json.loads(call('core', 'POST', '/services/light/turn_on', body='{"entity_id":"light.fixture"}'))['received']['entity_id'] == 'light.fixture'
     assert json.loads(call('ws', body='{"type":"get_states"}'))['success']
     events = call('ws', '--follow', body='{"type":"subscribe_events","event_type":"state_changed"}')

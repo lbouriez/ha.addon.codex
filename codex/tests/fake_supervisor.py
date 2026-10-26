@@ -47,6 +47,10 @@ async def handle(request):
         return web.Response(text='fixture log entry')
     if request.path == '/core/check' and request.method == 'POST':
         return web.json_response({'result': 'ok', 'data': {}})
+    if request.path == '/core/restart' and request.method == 'POST':
+        return web.json_response({'result': 'ok'})
+    if request.path == '/core/api/services/automation/reload' and request.method == 'POST':
+        return web.json_response([])
     if request.path == '/core/api/services/light/turn_on':
         return web.json_response({'received': await request.json()})
     if request.path == '/core/api/redirect':

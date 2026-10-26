@@ -78,6 +78,11 @@ RUN adduser -D -H -u 22000 -G root codex && \
 
 COPY rootfs/ /
 
+# Extend the verified ttyd client once at build time; no CDN or runtime patching.
+COPY terminal/ /tmp/codex-terminal/
+RUN python3 /tmp/codex-terminal/build.py /usr/bin/ttyd /usr/share/codex/terminal.html \
+    && rm -rf /tmp/codex-terminal
+
 RUN chmod +x \
     /usr/local/bin/ha-mcp \
     /usr/local/bin/codex-ha-helper \
@@ -92,12 +97,10 @@ RUN chmod +x \
 RUN cat > /etc/tmux.conf << 'EOF'
 set -g history-limit 5000
 set -ga terminal-overrides ',xterm*:smcup@:rmcup@'
-set -g mouse on
+set -g mouse off
 set -g xterm-keys on
 set -s set-clipboard on
 set -g allow-passthrough on
-bind -n WheelUpPane if-shell -F -t = "#{mouse_any_flag}" "send-keys -M" "if -Ft= '#{pane_in_mode}' 'send-keys -M' 'select-pane -t=; copy-mode -e; send-keys -M'"
-bind -n WheelDownPane select-pane -t= \; send-keys -M
 EOF
 
 RUN ln -sf /etc/tmux.conf /root/.tmux.conf

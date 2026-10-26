@@ -69,13 +69,21 @@ try:
     first = connect()
     wait_for(lambda: (root/'heartbeat').exists())
     launch = json.loads((root/'launch.json').read_text())
-    expected = ['--dangerously-bypass-approvals-and-sandbox'] if enabled else []
+    expected = ['--no-alt-screen'] if options.get('preserve_terminal_history', True) else []
+    if options.get('reasoning_effort', 'default') != 'default':
+        expected += ['-c', 'model_reasoning_effort="' + options['reasoning_effort'] + '"']
+    if enabled:
+        expected += ['--dangerously-bypass-approvals-and-sandbox']
     assert launch['args'] == expected, launch
     config = tomllib.loads((root/'.codex/config.toml').read_text())
     assert config['sandbox_mode'] == ('danger-full-access' if enabled else 'workspace-write')
     assert config['approval_policy'] == ('never' if enabled else 'on-request')
     disconnect(first)
     if persist:
+        assert tmux('show-options', '-gv', 'mouse').stdout.strip() == 'off'
+        assert tmux('show-options', '-gv', 'history-limit').stdout.strip() == str(options.get('terminal_scrollback', 10000))
+        if options.get('preserve_terminal_history', True):
+            assert tmux('show-options', '-gv', 'alternate-screen').stdout.strip() == 'off'
         wait_for(lambda: tmux('display-message', '-p', '#{session_attached}').stdout.strip() == '0')
         before = (root/'heartbeat').read_text()
         wait_for(lambda: (root/'heartbeat').read_text() != before)
