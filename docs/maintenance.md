@@ -19,12 +19,15 @@ It validates YAML, ownership, architecture consistency, translations, release
 metadata, Python regressions and Bash syntax. Native AMD64 and ARM64 runners
 build and smoke-test the actual image: CLI execution as root and the runtime
 user, terminal startup, MCP enabled/disabled, and legacy model migration.
+The real terminal launcher is also exercised with a harmless fake CLI to verify
+YOLO on/off argument propagation and that tmux keeps work running through a
+simulated client disconnect and reattaches to the same process.
 A disposable mock Supervisor also exercises the real unprivileged helpers:
 official MCP initialization/tools/resources/prompts, REST, WebSocket queries and
 subscriptions, configuration checks, file writes and credential isolation.
 The real background daemon is installed, started, queried, stopped and restarted
 as UID 22000 in a container with networking disabled. CI loads the shipped
-AppArmor profile and applies it to this daemon test; local Docker Desktop runs
+AppArmor profile and applies it to the terminal and daemon tests; local Docker Desktop runs
 without AppArmor unless `CODEX_TEST_APPARMOR` names an already loaded profile.
 
 Only main in `lbouriez/ha.addon.codex` may publish. Both architectures must pass
@@ -64,7 +67,7 @@ The smoke tests use a fixture token against an isolated mock Supervisor and make
 no model requests or real HA calls. They do not
 validate your ChatGPT entitlement, device login, real HA service calls, browser
 interaction or the full Supervisor environment on a running HA OS VM. The
-daemon test enforces AppArmor on CI runners; other smoke tests use Docker defaults.
+terminal and daemon tests enforce AppArmor on CI runners; the HA protocol fixture uses Docker defaults.
 Confirm those after installing. Switching from a separately installed upstream
 repository creates a separate HA add-on identity; back up existing Codex state
 before uninstalling an old instance.

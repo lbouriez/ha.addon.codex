@@ -9,6 +9,16 @@ SCRIPT = Path(__file__).resolve().parents[1] / 'rootfs/usr/local/bin/codex-merge
 
 
 class ModelConfigTests(unittest.TestCase):
+    def test_managed_yolo_defaults_return_to_normal(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'config.toml'
+            for access, approval, sandbox in [('full_access', 'never', 'danger-full-access'),
+                                               ('workspace', 'on-request', 'workspace-write')]:
+                subprocess.run([sys.executable, str(SCRIPT), str(path), '', 'false', access, approval], check=True)
+                config = tomllib.loads(path.read_text())
+                self.assertEqual(config['sandbox_mode'], sandbox)
+                self.assertEqual(config['approval_policy'], approval)
+
     def merge(self, initial, model=''):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / 'config.toml'

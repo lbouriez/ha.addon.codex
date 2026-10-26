@@ -95,9 +95,13 @@ def main(image):
     for enabled in (False, True):
         name = f'codex-smoke-{uuid.uuid4().hex[:10]}'
         options['enable_mcp'] = enabled
+        options['yolo_mode'] = enabled
+        options['session_persistence'] = enabled
         options['default_model'] = 'gpt-5.4'
         try:
-            docker('create', '--name', name, image)
+            profile = os.environ.get('CODEX_TEST_APPARMOR')
+            security = ['--security-opt', f'apparmor={profile}'] if profile else []
+            docker('create', '--name', name, *security, image)
             with tempfile.TemporaryDirectory() as temporary:
                 path = Path(temporary) / 'options.json'
                 path.write_text(json.dumps(options), encoding='utf-8')
@@ -116,6 +120,8 @@ def main(image):
             assert 'Migrating legacy gpt-5.4' in logs, logs
             docker('exec', name, '/usr/local/bin/codex-merge-config', '/tmp/codex-smoke/config.toml', '', str(enabled).lower(), 'workspace', 'on-request')
             docker('exec', name, 'env', 'CODEX_HOME=/tmp/codex-smoke', 'codex', 'mcp', 'list')
+            docker('cp', str(ROOT / 'codex/tests/check_terminal.py'), f'{name}:/tmp/check_terminal.py')
+            print(docker('exec', name, 'python3', '/tmp/check_terminal.py'))
             print(f'PASS {image}: terminal ready; MCP={enabled}; legacy model migration')
         except Exception:
             logs = subprocess.run(['docker', 'logs', name], capture_output=True, text=True)

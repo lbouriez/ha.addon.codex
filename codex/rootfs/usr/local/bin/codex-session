@@ -135,6 +135,7 @@ session_env=(
   "CODEX_ENABLE_MCP=$enable_mcp"
   "CODEX_PERMISSIONS=$codex_permissions"
   "CODEX_APPROVAL_POLICY=$codex_approval_policy"
+  "CODEX_YOLO_MODE=${CODEX_YOLO_MODE:-false}"
   "CODEX_USER_ID=$safe_user"
   "CODEX_WORK_DIR=$work_dir"
   "LOGNAME=$system_user"

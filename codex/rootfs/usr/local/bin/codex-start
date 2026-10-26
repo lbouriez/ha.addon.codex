@@ -11,6 +11,7 @@ fi
 
 theme="$(jq -r '.terminal_theme // "dark"' /data/options.json)"
 session_persist="$(jq -r '.session_persistence // false' /data/options.json)"
+yolo_mode="$(jq -r '.yolo_mode // false' /data/options.json)"
 work_dir="$(jq -r '.working_directory // "/homeassistant"' /data/options.json)"
 enable_mcp="$(jq -r 'if .enable_mcp == null then true else .enable_mcp end' /data/options.json)"
 default_model="$(jq -r '.default_model // ""' /data/options.json)"
@@ -21,6 +22,11 @@ if [[ "$default_model" == "gpt-5.4" ]]; then
 fi
 codex_permissions="$(jq -r '.codex_permissions // "workspace"' /data/options.json)"
 codex_approval_policy="$(jq -r '.codex_approval_policy // "on-request"' /data/options.json)"
+if [[ "$yolo_mode" == "true" ]]; then
+  codex_permissions="full_access"
+  codex_approval_policy="never"
+  echo '[INFO] YOLO mode enabled: Codex sandbox and approval prompts are disabled.'
+fi
 auto_update_codex="$(jq -r '.auto_update_codex // false' /data/options.json)"
 codex_update_timeout="$(jq -r '.codex_update_timeout // 300' /data/options.json)"
 case "$codex_update_timeout" in
@@ -34,6 +40,7 @@ export CODEX_STATE_ROOT="/data/codex-home"
 export CODEX_MANAGED_ROOT="/data/codex-managed"
 export CODEX_WORK_DIR="$work_dir"
 export CODEX_SESSION_PERSIST="$session_persist"
+export CODEX_YOLO_MODE="$yolo_mode"
 export CODEX_ENABLE_MCP="$enable_mcp"
 export CODEX_DEFAULT_MODEL="$default_model"
 export CODEX_PERMISSIONS="$codex_permissions"

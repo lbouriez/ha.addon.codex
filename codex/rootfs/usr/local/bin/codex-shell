@@ -27,9 +27,13 @@ repair_codex_config() {
 
 if command -v codex >/dev/null 2>&1; then
   codex_command="$(/usr/local/bin/codex-select-cli)"
+  codex_args=()
+  if [[ "${CODEX_YOLO_MODE:-false}" == "true" ]]; then
+    codex_args+=(--dangerously-bypass-approvals-and-sandbox)
+  fi
   while true; do
     repair_codex_config
-    "$codex_command"
+    "$codex_command" "${codex_args[@]}"
     codex_status=$?
     if [[ "$codex_status" -eq 0 ]]; then
       break
