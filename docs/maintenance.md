@@ -19,6 +19,9 @@ It validates YAML, ownership, architecture consistency, translations, release
 metadata, Python regressions and Bash syntax. Native AMD64 and ARM64 runners
 build and smoke-test the actual image: CLI execution as root and the runtime
 user, terminal startup, MCP enabled/disabled, and legacy model migration.
+A disposable mock Supervisor also exercises the real unprivileged helpers:
+official MCP initialization/tools/resources/prompts, REST, WebSocket queries and
+subscriptions, configuration checks, file writes and credential isolation.
 
 Only main in `lbouriez/ha.addon.codex` may publish. Both architectures must pass
 before the signed multi-arch manifest is published. The HA builder's
@@ -53,7 +56,8 @@ version embedded in the Dockerfile; that is a deliberate reviewed release step.
 
 ## Limits of CI
 
-The smoke tests have no HA credentials and make no model requests. They do not
+The smoke tests use a fixture token against an isolated mock Supervisor and make
+no model requests or real HA calls. They do not
 validate your ChatGPT entitlement, device login, real HA service calls, browser
 interaction or the Supervisor-enforced AppArmor profile on a running HA OS VM.
 Confirm those after installing. Switching from a separately installed upstream

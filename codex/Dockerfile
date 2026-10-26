@@ -58,7 +58,7 @@ RUN NPM_CONFIG_CACHE=/tmp/npm-cache npm install -g "@openai/codex@${CODEX_VERSIO
     && codex --version \
     && rm -rf /tmp/npm-cache
 
-RUN pip3 install --no-cache-dir --break-system-packages hass-mcp
+RUN pip3 install --no-cache-dir --break-system-packages "mcp==1.30.0" "aiohttp>=3.13,<4"
 
 RUN case "${BUILD_ARCH}" in \
         amd64) HA_ARCH="amd64" ;; \
@@ -78,14 +78,15 @@ RUN adduser -D -H -u 22000 -G root codex && \
 COPY rootfs/ /
 
 RUN chmod +x \
-    /usr/local/bin/hass-mcp-wrapper \
-    /usr/local/bin/hass-mcp-root-helper \
+    /usr/local/bin/ha-mcp \
+    /usr/local/bin/codex-ha-helper \
+    /usr/local/bin/ha-api \
     /usr/local/bin/codex-merge-config \
     /usr/local/bin/codex-shell \
     /usr/local/bin/codex-select-cli \
     /usr/local/bin/codex-session \
     /usr/local/bin/codex-start \
-    && chmod 440 /etc/sudoers.d/codex-hass-mcp
+    && chmod 440 /etc/sudoers.d/codex-ha
 
 RUN cat > /etc/tmux.conf << 'EOF'
 set -g history-limit 5000
@@ -108,7 +109,7 @@ PS1='\[\033[1;36m\]codex\[\033[0m\]:\[\033[1;34m\]\w\[\033[0m\]\$ '
 
 alias ll='ls -la'
 alias ha-config='cd /homeassistant'
-alias ha-logs='cat /homeassistant/home-assistant.log 2>/dev/null || echo "Log not found"'
+alias ha-logs='ha-api supervisor GET /core/logs'
 EOF
 
 RUN echo 'source /etc/codex.bashrc' > /root/.profile

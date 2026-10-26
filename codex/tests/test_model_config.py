@@ -31,3 +31,18 @@ class ModelConfigTests(unittest.TestCase):
 
     def test_explicit_new_model_is_managed(self):
         self.assertEqual(self.merge('', 'gpt-6.1-sol')['model'], 'gpt-6.1-sol')
+
+    def test_official_mcp_replaces_old_transport_settings(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'config.toml'
+            path.write_text('[mcp_servers.homeassistant]\ncommand="/usr/local/bin/hass-mcp-wrapper"\n'
+                            'url="https://old.invalid/mcp"\nargs=["old"]\n'
+                            'bearer_token_env_var="OLD_TOKEN"\n'
+                            '[mcp_servers.other]\nurl="https://example.com/mcp"\n')
+            subprocess.run([sys.executable, str(SCRIPT), str(path), '', 'true'], check=True)
+            config = tomllib.loads(path.read_text())
+            server = config['mcp_servers']['homeassistant']
+            self.assertEqual(server['command'], '/usr/local/bin/ha-mcp')
+            self.assertEqual(server['startup_timeout_sec'], 30)
+            self.assertFalse({'url', 'args', 'bearer_token_env_var'} & server.keys())
+            self.assertIn('other', config['mcp_servers'])

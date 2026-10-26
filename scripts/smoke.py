@@ -14,7 +14,57 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def docker(*args):
-    return subprocess.run(['docker', *args], check=True, capture_output=True, text=True).stdout.strip()
+    result = subprocess.run(['docker', *args], capture_output=True, text=True)
+    if result.returncode:
+        print(result.stdout + result.stderr, file=sys.stderr)
+        result.check_returncode()
+    return result.stdout.strip()
+
+
+def check_ha_access(image):
+    suffix = uuid.uuid4().hex[:10]
+    network, supervisor, addon = (f'codex-network-{suffix}', f'codex-supervisor-{suffix}', f'codex-api-{suffix}')
+    docker('network', 'create', network)
+    try:
+        docker('create', '--name', supervisor, '--network', network, '--network-alias', 'supervisor',
+               '--entrypoint', 'python3', image, '/tmp/fake_supervisor.py')
+        docker('cp', str(ROOT / 'codex/tests/fake_supervisor.py'), f'{supervisor}:/tmp/fake_supervisor.py')
+        docker('start', supervisor)
+        for _ in range(30):
+            ready = subprocess.run(['docker', 'exec', supervisor, 'python3', '-c',
+                                    'import socket; socket.create_connection(("127.0.0.1",80),1).close()'], capture_output=True)
+            if ready.returncode == 0:
+                break
+            time.sleep(1)
+        else:
+            raise AssertionError('Mock Supervisor failed to start')
+        docker('create', '--name', addon, '--network', network,
+               '-e', 'SUPERVISOR_TOKEN=smoke-test-supervisor-token', image)
+        options = yaml.safe_load((ROOT / 'codex/config.yaml').read_text())['options']
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'options.json'
+            path.write_text(json.dumps(options), encoding='utf-8')
+            docker('cp', str(path), f'{addon}:/data/options.json')
+        docker('cp', str(ROOT / 'codex/tests/check_ha_connection.py'), f'{addon}:/tmp/check_ha_connection.py')
+        docker('start', addon)
+        for _ in range(60):
+            ready = subprocess.run(['docker', 'exec', addon, 'curl', '-fsS', 'http://127.0.0.1:7681/'], capture_output=True)
+            if ready.returncode == 0:
+                break
+            time.sleep(1)
+        else:
+            raise AssertionError('Add-on failed to start with the mock Supervisor')
+        print(docker('exec', addon, 'env', '-i', 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+                     'HOME=/tmp', 'su-exec', '22000:0', 'python3', '/tmp/check_ha_connection.py'))
+    except Exception:
+        for name in (supervisor, addon):
+            logs = subprocess.run(['docker', 'logs', name], capture_output=True, text=True)
+            print(logs.stdout + logs.stderr, file=sys.stderr)
+        raise
+    finally:
+        for name in (addon, supervisor):
+            subprocess.run(['docker', 'rm', '-f', name], capture_output=True, check=False)
+        subprocess.run(['docker', 'network', 'rm', network], capture_output=True, check=False)
 
 
 def main(image):
@@ -41,7 +91,7 @@ def main(image):
             else:
                 raise AssertionError('Terminal did not become ready within 60 seconds')
             logs = docker('logs', name)
-            expected = 'Bundled MCP server registered' if enabled else 'Bundled MCP server disabled'
+            expected = 'Official Home Assistant MCP registered' if enabled else 'Home Assistant MCP disabled'
             assert expected in logs, logs
             assert 'Migrating legacy gpt-5.4' in logs, logs
             docker('exec', name, '/usr/local/bin/codex-merge-config', '/tmp/codex-smoke/config.toml', '', str(enabled).lower(), 'workspace', 'on-request')
@@ -53,6 +103,7 @@ def main(image):
             raise
         finally:
             subprocess.run(['docker', 'rm', '-f', name], capture_output=True, check=False)
+    check_ha_access(image)
 
 
 if __name__ == '__main__':

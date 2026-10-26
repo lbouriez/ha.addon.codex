@@ -241,7 +241,13 @@ def main():
             preserved_homeassistant = {}
         merged_homeassistant = dict(preserved_homeassistant)
         merged_homeassistant.update(existing_homeassistant)
-        merged_homeassistant["command"] = "/usr/local/bin/hass-mcp-wrapper"
+        # The managed server is always the official HA endpoint via the credential helper.
+        # Remove transport fields left by older/custom versions before choosing stdio.
+        for key in ("url", "args", "env", "env_vars", "cwd", "http_headers", "env_http_headers", "bearer_token_env_var"):
+            merged_homeassistant.pop(key, None)
+        merged_homeassistant["command"] = "/usr/local/bin/ha-mcp"
+        merged_homeassistant.setdefault("startup_timeout_sec", 30)
+        merged_homeassistant.setdefault("tool_timeout_sec", 120)
         mcp_servers["homeassistant"] = merged_homeassistant
         metadata["managed_homeassistant_mcp"] = True
     else:

@@ -28,7 +28,8 @@ Manual install:
 - Prebuilt GHCR images for faster installs and Home Assistant updates.
 - Direct access to `/homeassistant`, `/share`, and `/media`.
 - Read-only access to `/ssl` and `/backup`.
-- Optional Home Assistant MCP integration for entity lookup and service calls.
+- Automatic connection to the official Home Assistant MCP Server integration.
+- Authenticated Core REST, WebSocket and Supervisor access through `ha-api`.
 - Persistent Codex auth and settings under `/data/codex-home`.
 - Home Assistant options for model default, sandbox access, MCP, terminal theme, and session persistence.
 
@@ -49,6 +50,12 @@ On first launch, Codex prompts you to sign in. The Codex CLI supports ChatGPT si
 
 Use `full_access` only when you want Codex to run with broad local access inside the App container.
 Use `codex_approval_policy: never` only when you want autonomous execution without per-action approval prompts.
+
+Enable the [official MCP Server integration](https://www.home-assistant.io/integrations/mcp_server/)
+in Home Assistant. The App connects internally through Supervisor without a
+manual URL or token. No other MCP implementation is bundled or used as a fallback.
+Run `ha-api status` in the terminal to check connectivity. Codex itself still
+requires your normal ChatGPT or API-key sign-in.
 
 ## Updates
 

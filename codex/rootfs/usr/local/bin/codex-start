@@ -38,7 +38,6 @@ export CODEX_ENABLE_MCP="$enable_mcp"
 export CODEX_DEFAULT_MODEL="$default_model"
 export CODEX_PERMISSIONS="$codex_permissions"
 export CODEX_APPROVAL_POLICY="$codex_approval_policy"
-export CODEX_HA_URL="http://supervisor/core"
 export CODEX_SUPERVISOR_TOKEN_FILE="/tmp/codex/ha-token"
 
 mkdir -p \
@@ -111,7 +110,7 @@ cat > "$CODEX_MANAGED_ROOT/AGENTS.md" <<'EOF'
 
 In this App container, paths are mapped differently than HA Core:
 - `/homeassistant` = HA config directory (equivalent to `/config` in HA Core)
-- `/config` does NOT exist - always use `/homeassistant`
+- `/config` is this App's own configuration mount, NOT the HA Core configuration.
 
 When users mention `/config/...`, translate to `/homeassistant/...`
 
@@ -137,7 +136,28 @@ When users mention `/config/...`, translate to `/homeassistant/...`
 
 ## Home Assistant Integration
 
-Use the `homeassistant` MCP server to query entities and call services when MCP is enabled. The Supervisor token stays outside the interactive shell and is only available through the privileged `hass-mcp` helper path.
+The `homeassistant` MCP server connects only to Home Assistant's official Model Context Protocol Server integration at the internal `/core/api/mcp` endpoint. The App automatically authenticates through Supervisor; no URL, manual token, or separate HA login is needed. Its tools depend on the LLM APIs and entity exposure configured in HA. There is no third-party MCP fallback.
+
+Use `ha-api status` to check official MCP, Core REST API and Supervisor API access.
+Use `ha-api` for diagnostics and operations not exposed as MCP tools:
+
+```bash
+ha-api core GET /states
+ha-api core GET /config
+ha-api supervisor GET /core/info
+ha-api supervisor GET /core/logs
+ha-api supervisor POST /core/check
+printf '%s' '{"type":"get_states"}' | ha-api ws
+printf '%s' '{"type":"config/entity_registry/list"}' | ha-api ws
+printf '%s' '{"type":"subscribe_events","event_type":"state_changed"}' | ha-api ws --follow
+```
+
+POST/PUT/PATCH requests accept JSON on stdin. For example, call a service only when the user requested that action:
+`printf '%s' '{"entity_id":"light.example"}' | ha-api core POST /services/light/turn_on`.
+Use the scoped Supervisor API for core checks, logs and management. The bare `ha` CLI is not preauthenticated; use `ha-api` rather than looking for credentials. Supervisor enforces the App's configured API role.
+The Supervisor token stays outside the interactive shell and Codex config. `ha-api` and the MCP bridge use a fixed-destination privileged helper; do not read, copy, or print credentials.
+
+Before editing configuration, inspect the real files and entities. Preserve unrelated settings, validate with `ha-api supervisor POST /core/check`, and verify the relevant entities after an authorized reload or restart. Use supported HA APIs or UI for UI-managed settings; do not edit `.storage` JSON directly. File access is limited to mapped directories and is not host/VM root access.
 
 ## Reading Home Assistant Logs
 
@@ -149,14 +169,14 @@ Use the `homeassistant` MCP server to query entities and call services when MCP 
 
 **Commands to read logs:**
 ```bash
-# View recent logs (ha CLI)
-ha core logs 2>&1 | tail -100
+# View recent logs (authenticated Supervisor API)
+ha-api supervisor GET /core/logs | tail -100
 
 # Filter by keyword
-ha core logs 2>&1 | grep -i keyword
+ha-api supervisor GET /core/logs | grep -i keyword
 
 # Filter errors only
-ha core logs 2>&1 | grep -iE "(error|exception)"
+ha-api supervisor GET /core/logs | grep -iE "(error|exception)"
 
 # Alternative: read log file directly
 tail -100 /homeassistant/home-assistant.log
@@ -185,13 +205,17 @@ else
 fi
 if [[ "$enable_mcp" == "true" ]]; then
   CODEX_HOME="$validate_home" codex mcp get homeassistant >/dev/null
-  echo '[INFO] Bundled MCP server registered: "homeassistant" (voska/hass-mcp)'
+  echo '[INFO] Official Home Assistant MCP registered: "homeassistant" (auto-authenticated via Supervisor)'
 else
   CODEX_HOME="$validate_home" codex mcp list >/dev/null
-  echo '[INFO] Bundled MCP server disabled: "homeassistant"'
+  echo '[INFO] Home Assistant MCP disabled: "homeassistant"'
 fi
 rm -rf "$validate_home"
 trap - EXIT
+
+if ! timeout 20 /usr/local/bin/codex-ha-helper status; then
+  echo '[WARN] HA connectivity check incomplete. The terminal remains available; run ha-api status after HA is ready.' >&2
+fi
 
 if [[ "$theme" == "dark" ]]; then
   colors='background=#1e1e2e,foreground=#cdd6f4,cursor=#f5e0dc'
