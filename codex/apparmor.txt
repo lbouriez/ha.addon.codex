@@ -75,4 +75,12 @@ profile codex flags=(attach_disconnected,mediate_deleted) {
   # User-installed npm binaries and packages in the persistent Codex home
   /data/codex-home/users/*/.local/bin/** ixr,
   /data/codex-home/users/*/.local/lib/node_modules/** ixmr,
+
+  # Codex validates staged daemon binaries before activating a release.
+  # Keep execution scoped to managed package programs, including .staging.*.
+  /data/codex-home/users/*/.codex/packages/app-server-daemon/releases/*/bin/* ixmr,
+  /data/codex-home/users/*/.codex/packages/app-server-daemon/releases/*/codex-path/* ixmr,
+  /data/codex-home/users/*/.codex/packages/app-server-daemon/releases/*/codex-resources/bwrap ixmr,
+  /data/codex-home/users/*/.codex/packages/app-server-daemon/releases/*/codex-resources/voice/bin/* ixmr,
+  /data/codex-home/users/*/.codex/packages/app-server-daemon/releases/*/codex-resources/voice/lib/**.so* mr,
 }

@@ -94,10 +94,19 @@ jobs:
           cosign: 'false'
           version: ${{ needs.validate.outputs.version }}
           labels: io.hass.type=addon
-      - name: Smoke test CLI and terminal startup
+      - name: Load add-on AppArmor profile
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y apparmor
+          sudo apparmor_parser -r -W codex/apparmor.txt
+      - name: Smoke test terminal, HA access and confined daemon
         env:
           TEST_IMAGE: ${{ matrix.image }}:test-${{ github.sha }}
+          CODEX_TEST_APPARMOR: codex
         run: python scripts/smoke.py "$TEST_IMAGE"
+      - name: Unload test AppArmor profile
+        if: always()
+        run: sudo apparmor_parser -R codex/apparmor.txt
       - name: Publish tested image
         if: github.repository == 'lbouriez/ha.addon.codex' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: home-assistant/builder/actions/build-image@2026.09.0

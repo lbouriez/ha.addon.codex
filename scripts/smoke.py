@@ -1,5 +1,6 @@
 """Exercise the built image without HA, credentials, or model requests."""
 import json
+import os
 import re
 import subprocess
 import sys
@@ -67,6 +68,25 @@ def check_ha_access(image):
         subprocess.run(['docker', 'network', 'rm', network], capture_output=True, check=False)
 
 
+def check_daemon(image):
+    name = f'codex-daemon-{uuid.uuid4().hex[:10]}'
+    profile = os.environ.get('CODEX_TEST_APPARMOR')
+    security = ['--security-opt', f'apparmor={profile}'] if profile else []
+    try:
+        docker('create', '--name', name, '--init', '--network', 'none', *security,
+               '-e', 'HOME=/data/codex-home/users/anonymous',
+               '-e', 'CODEX_HOME=/data/codex-home/users/anonymous/.codex',
+               '--entrypoint', 'sh', image, '-ec',
+               'mkdir -p "$CODEX_HOME"; chown -R 22000:0 "$HOME"; '
+               'exec su-exec 22000:0 python3 /tmp/check_daemon.py')
+        docker('cp', str(ROOT / 'codex/tests/check_daemon.py'), f'{name}:/tmp/check_daemon.py')
+        print(docker('start', '--attach', name))
+        assert docker('inspect', '--format', '{{.State.ExitCode}}', name) == '0'
+        print(f'PASS daemon AppArmor profile: {profile or "not enforced by this test"}')
+    finally:
+        subprocess.run(['docker', 'rm', '-f', name], capture_output=True, check=False)
+
+
 def main(image):
     version = re.search(r'^ARG CODEX_VERSION=(.+)$', (ROOT / 'codex/Dockerfile').read_text(), re.M)[1]
     assert docker('run', '--rm', '--entrypoint', 'codex', image, '--version') == f'codex-cli {version}'
@@ -104,6 +124,7 @@ def main(image):
         finally:
             subprocess.run(['docker', 'rm', '-f', name], capture_output=True, check=False)
     check_ha_access(image)
+    check_daemon(image)
 
 
 if __name__ == '__main__':

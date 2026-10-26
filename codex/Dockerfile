@@ -34,6 +34,7 @@ RUN apk add --no-cache \
     openssh-client \
     openssl \
     p7zip \
+    procps \
     ripgrep \
     sed \
     sudo \
