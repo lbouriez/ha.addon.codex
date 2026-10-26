@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-10-26
+
+### Changed
+- Publish the fork and its AMD64/ARM64 images under `lbouriez/ha.addon.codex`, with fork-specific install links, metadata, ownership, and support links; preserve upstream license and attribution.
+- Pin the image to Codex CLI 0.164.0 and use Codex's recommended account model instead of the retired gpt-5.4 default. Migrate the inherited App option while preserving manually configured models.
+- Validate pull requests, build and smoke-test both native architectures, then publish signed versioned images and a multi-architecture manifest on main. Read base images from build.yaml and preserve existing release tags.
+
+### Fixed
+- Honor explicit `enable_mcp: false` and reduce terminal connection noise (adapted from upstream PR #6).
+- Persist optional startup CLI updates as the unprivileged user and permit execution under AppArmor (adapted from upstream PR #7).
+- Permit executable mapping of the bundled npm CLI under its actual `/usr/local/lib/node_modules` prefix.
+- Select the image CLI when a persisted installation is older or broken, including failed installs and execution errors.
+- Enforce Linux line endings for extensionless runtime scripts checked out on Windows.
+
+### Added
+- Configuration, model-preservation, and CLI-selection regression tests plus container startup smoke tests.
+- Dependabot updates for Actions and base images, release instructions, and a recorded review of upstream PRs.
+
 ## [0.2.15] - 2026-05-31
 
 ### Fixed

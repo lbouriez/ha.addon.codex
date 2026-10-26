@@ -1,0 +1,7 @@
+tests/
+README.md
+CHANGELOG.md
+translations/
+*.png
+__pycache__/
+*.pyc

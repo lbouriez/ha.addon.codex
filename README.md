@@ -4,17 +4,20 @@
 
 Run OpenAI Codex from the Home Assistant sidebar.
 
+Maintained by [@lbouriez](https://github.com/lbouriez). Forked from
+[kecksdigital/codex-hass](https://github.com/kecksdigital/codex-hass).
+
 This repository publishes one Home Assistant App: `Codex`. It gives you a browser terminal inside Home Assistant, starts in your Home Assistant configuration directory, and can optionally connect Codex to Home Assistant through MCP.
 
 ## Install
 
-[![Add Repository](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fkecksdigital%2Fcodex-hass)
+[![Add Repository](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Flbouriez%2Fha.addon.codex)
 
 Manual install:
 
 1. Open **Settings** -> **Add-ons** -> **Add-on Store** in Home Assistant.
 2. Open **Repositories** from the three-dot menu.
-3. Add `https://github.com/kecksdigital/codex-hass`.
+3. Add `https://github.com/lbouriez/ha.addon.codex`.
 4. Install **Codex**.
 5. Start the App and open it from the sidebar.
 
@@ -37,7 +40,7 @@ On first launch, Codex prompts you to sign in. The Codex CLI supports ChatGPT si
 
 ## Defaults
 
-- Model: `gpt-5.4`
+- Model: blank (Codex recommended model for your account)
 - Access: `workspace`
 - Approval policy: `on-request`
 - Session persistence: off for a cleaner first sign-in
@@ -54,7 +57,7 @@ Home Assistant updates the Codex App when this repository publishes a higher ver
 The App uses prebuilt images from GitHub Container Registry:
 
 ```text
-ghcr.io/kecksdigital/codex-hass:<version>
+ghcr.io/lbouriez/ha.addon.codex:<version>
 ```
 
 Enable **Auto update** on the Codex App page in Home Assistant if you want Home Assistant to install future App versions automatically.
@@ -62,6 +65,8 @@ Enable **Auto update** on the Codex App page in Home Assistant if you want Home 
 ## Documentation
 
 Read the full usage guide in [codex/README.md](codex/README.md).
+Maintainers: see [release and CI instructions](docs/maintenance.md) and the
+[upstream PR review](docs/upstream-review.md).
 
 Useful upstream docs:
 
@@ -72,7 +77,7 @@ Useful upstream docs:
 
 ## Support
 
-- [Issues](https://github.com/kecksdigital/codex-hass/issues)
+- [Issues](https://github.com/lbouriez/ha.addon.codex/issues)
 - [Home Assistant Community](https://community.home-assistant.io/)
 
 ## License

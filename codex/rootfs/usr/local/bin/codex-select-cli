@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+"""Prefer a working persistent CLI only when it is at least as new as the image."""
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+
+def version(path):
+    try:
+        result = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    match = re.fullmatch(r"codex-cli (\d+)\.(\d+)\.(\d+)(?:[-+].*)?\s*", result.stdout)
+    if result.returncode != 0 or match is None:
+        return None
+    return tuple(map(int, match.groups()))
+
+
+def select_cli(candidate, bundled):
+    if candidate == bundled or not os.path.isfile(bundled):
+        return candidate
+    candidate_version = version(candidate)
+    bundled_version = version(bundled)
+    if candidate_version is None or (bundled_version is not None and candidate_version < bundled_version):
+        print("[INFO] Using image-installed Codex; persistent CLI is older or cannot run.", file=sys.stderr)
+        return bundled
+    return candidate
+
+
+if __name__ == "__main__":
+    print(select_cli(shutil.which("codex") or "/usr/local/bin/codex", "/usr/local/bin/codex"))

@@ -12,8 +12,13 @@ fi
 theme="$(jq -r '.terminal_theme // "dark"' /data/options.json)"
 session_persist="$(jq -r '.session_persistence // false' /data/options.json)"
 work_dir="$(jq -r '.working_directory // "/homeassistant"' /data/options.json)"
-enable_mcp="$(jq -r '.enable_mcp // true' /data/options.json)"
+enable_mcp="$(jq -r 'if .enable_mcp == null then true else .enable_mcp end' /data/options.json)"
 default_model="$(jq -r '.default_model // ""' /data/options.json)"
+# HA preserves saved options across upgrades, including the old image default.
+if [[ "$default_model" == "gpt-5.4" ]]; then
+  echo '[INFO] Migrating legacy gpt-5.4 App default to the Codex recommended model. Clear default_model in App options to persist this choice.'
+  default_model=""
+fi
 codex_permissions="$(jq -r '.codex_permissions // "workspace"' /data/options.json)"
 codex_approval_policy="$(jq -r '.codex_approval_policy // "on-request"' /data/options.json)"
 auto_update_codex="$(jq -r '.auto_update_codex // false' /data/options.json)"
@@ -74,20 +79,29 @@ unset SUPERVISOR_TOKEN
 
 if [[ "$auto_update_codex" == "true" ]]; then
   update_log="/tmp/codex/codex-update.log"
-  root_npm_cache="/tmp/codex/npm-root-cache"
-  mkdir -p "$root_npm_cache"
-  chmod 700 "$root_npm_cache"
+  update_user_root="$CODEX_STATE_ROOT/users/anonymous"
+  update_npm_cache="$update_user_root/.npm"
+  update_npm_prefix="$update_user_root/.local"
+  update_npm_bin="$update_npm_prefix/bin"
+  mkdir -p "$update_npm_cache" "$update_npm_bin"
+  chown -R 22000:0 "$update_user_root"
+  chmod 700 "$update_user_root" "$update_npm_cache" "$update_npm_prefix"
+  chmod 755 "$update_npm_bin"
   echo "[INFO] Updating Codex CLI with npm install -g @openai/codex@latest (timeout ${codex_update_timeout}s)"
-  if timeout "$codex_update_timeout" env NPM_CONFIG_CACHE="$root_npm_cache" npm install -g @openai/codex@latest >"$update_log" 2>&1; then
-    echo "[INFO] Codex CLI update completed: $(codex --version 2>/dev/null || echo unknown)"
+  if timeout "$codex_update_timeout" su-exec 22000:0 env \
+    "HOME=$update_user_root" \
+    "NPM_CONFIG_CACHE=$update_npm_cache" \
+    "NPM_CONFIG_PREFIX=$update_npm_prefix" \
+    "PATH=$update_npm_bin:${PATH}" \
+    npm install -g @openai/codex@latest >"$update_log" 2>&1; then
+    echo "[INFO] Codex CLI update completed: $("$update_npm_bin/codex" --version 2>/dev/null || echo unknown)"
   else
     update_status=$?
     echo "[WARN] Codex CLI update failed or timed out with exit code ${update_status}; continuing with installed version"
     tail -n 10 "$update_log" 2>/dev/null | sed 's/^/[WARN] update log: /' || true
   fi
-  rm -rf "$root_npm_cache"
 else
-  echo "[INFO] auto_update_codex disabled - using image-installed Codex CLI: $(codex --version 2>/dev/null || echo unknown)"
+  echo "[INFO] Codex CLI auto-update disabled. Image version: $(codex --version 2>/dev/null || echo unknown); sessions select a healthy persistent version when it is newer."
 fi
 
 cat > "$CODEX_MANAGED_ROOT/AGENTS.md" <<'EOF'
@@ -171,10 +185,10 @@ else
 fi
 if [[ "$enable_mcp" == "true" ]]; then
   CODEX_HOME="$validate_home" codex mcp get homeassistant >/dev/null
-  echo "[INFO] Home Assistant MCP configured for Codex home"
+  echo '[INFO] Bundled MCP server registered: "homeassistant" (voska/hass-mcp)'
 else
   CODEX_HOME="$validate_home" codex mcp list >/dev/null
-  echo "[INFO] Home Assistant MCP disabled"
+  echo '[INFO] Bundled MCP server disabled: "homeassistant"'
 fi
 rm -rf "$validate_home"
 trap - EXIT
@@ -186,6 +200,7 @@ else
 fi
 
 exec ttyd \
+  --debug 3 \
   --port 7681 \
   --writable \
   --ping-interval 30 \

@@ -29,8 +29,7 @@ configuration:
   default_model:
     name: Default Model
     description: >-
-      Persistent startup model for Codex. The App starts with gpt-5.4,
-      and users can still switch models during a session with /model.
+      Startup model for Codex. Leave blank to use the recommended model for your account. Use /model to switch during a session.
   codex_permissions:
     name: Codex Access Level
     description: >-

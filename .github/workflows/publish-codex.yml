@@ -1,116 +1,136 @@
-name: Publish Codex App
+name: Build and publish Codex
 
 on:
   push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/publish-codex.yml"
-      - "codex/**"
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
-env:
-  ARCHITECTURES: '["amd64", "aarch64"]'
-  IMAGE_NAME: codex-hass
+concurrency:
+  group: codex-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
+env:
+  ARCHITECTURES: '["amd64", "aarch64"]'
+  IMAGE_NAME: ha.addon.codex
+
 jobs:
-  init:
-    name: Initialize
-    runs-on: ubuntu-latest
+  validate:
+    name: Validate configuration and tests
+    runs-on: ubuntu-24.04
     outputs:
+      version: ${{ steps.metadata.outputs.version }}
       matrix: ${{ steps.matrix.outputs.matrix }}
-      version: ${{ steps.version.outputs.version }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Read Codex App version
-        id: version
-        shell: bash
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - run: python -m pip install PyYAML==6.0.3
+      - name: Validate add-on metadata and ownership
+        id: metadata
+        run: python scripts/validate.py
+      - name: Test configuration and CLI selection
+        run: python -B -m unittest discover -s codex/tests -v
+      - name: Check shell scripts
         run: |
-          version="$(sed -nE 's/^version:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/p' codex/config.yaml)"
-          if [[ -z "${version}" ]]; then
-            echo "::error::Unable to read version from codex/config.yaml"
-            exit 1
-          fi
-          echo "version=${version}" >> "${GITHUB_OUTPUT}"
-          echo "Codex App version: ${version}"
-
-      - name: Prepare build matrix
+          for script in codex/rootfs/usr/local/bin/*; do
+            if head -1 "$script" | grep -q bash; then
+              bash -n "$script"
+              shellcheck --severity=error "$script"
+            fi
+          done
+      - name: Prepare native build matrix
         id: matrix
-        uses: home-assistant/builder/actions/prepare-multi-arch-matrix@2026.03.2
+        uses: home-assistant/builder/actions/prepare-multi-arch-matrix@2026.09.0
         with:
           architectures: ${{ env.ARCHITECTURES }}
           image-name: ${{ env.IMAGE_NAME }}
 
   build:
-    name: Build ${{ matrix.arch }}
-    needs: init
+    name: Build and test ${{ matrix.arch }}
+    needs: validate
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
       packages: write
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.init.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.validate.outputs.matrix) }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Select Home Assistant base image
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - run: python -m pip install PyYAML==6.0.3
+      - name: Read base image from build.yaml
         id: base
-        shell: bash
+        env:
+          BUILD_ARCH: ${{ matrix.arch }}
         run: |
-          case "${{ matrix.arch }}" in
-            amd64)
-              echo "image=ghcr.io/home-assistant/amd64-base-python:3.13-alpine3.21" >> "${GITHUB_OUTPUT}"
-              ;;
-            aarch64)
-              echo "image=ghcr.io/home-assistant/aarch64-base-python:3.13-alpine3.21" >> "${GITHUB_OUTPUT}"
-              ;;
-            *)
-              echo "::error::Unsupported architecture: ${{ matrix.arch }}"
-              exit 1
-              ;;
-          esac
-
-      - name: Build and publish image
-        uses: home-assistant/builder/actions/build-image@2026.03.2
+          python - <<'PY'
+          import os, yaml
+          from pathlib import Path
+          build = yaml.safe_load(Path('codex/build.yaml').read_text())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              print('image=' + build['build_from'][os.environ['BUILD_ARCH']], file=output)
+          PY
+      - name: Build test image
+        uses: home-assistant/builder/actions/build-image@2026.09.0
         with:
           arch: ${{ matrix.arch }}
-          build-args: |
-            BUILD_FROM=${{ steps.base.outputs.image }}
+          build-args: BUILD_FROM=${{ steps.base.outputs.image }}
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          context: codex
+          image: ${{ matrix.image }}
+          image-tags: test-${{ github.sha }}
+          load: 'true'
+          push: 'false'
+          cosign: 'false'
+          version: ${{ needs.validate.outputs.version }}
+          labels: io.hass.type=addon
+      - name: Smoke test CLI and terminal startup
+        env:
+          TEST_IMAGE: ${{ matrix.image }}:test-${{ github.sha }}
+        run: python scripts/smoke.py "$TEST_IMAGE"
+      - name: Publish tested image
+        if: github.repository == 'lbouriez/ha.addon.codex' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: home-assistant/builder/actions/build-image@2026.09.0
+        with:
+          arch: ${{ matrix.arch }}
+          build-args: BUILD_FROM=${{ steps.base.outputs.image }}
           container-registry-password: ${{ secrets.GITHUB_TOKEN }}
           context: codex
           image: ${{ matrix.image }}
           image-tags: |
-            ${{ needs.init.outputs.version }}
+            ${{ needs.validate.outputs.version }}
             latest
-          labels: |
-            io.hass.type=addon
-          push: "true"
-          version: ${{ needs.init.outputs.version }}
+          push: 'true'
+          skip-existing: ${{ needs.validate.outputs.version }}
+          version: ${{ needs.validate.outputs.version }}
+          labels: io.hass.type=addon
 
   manifest:
     name: Publish multi-arch manifest
-    needs:
-      - init
-      - build
-    runs-on: ubuntu-latest
+    if: github.repository == 'lbouriez/ha.addon.codex' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [validate, build]
+    runs-on: ubuntu-24.04
     permissions:
       id-token: write
       packages: write
     steps:
-      - name: Publish manifest
-        uses: home-assistant/builder/actions/publish-multi-arch-manifest@2026.03.2
+      - name: Publish manifest after both architectures pass
+        uses: home-assistant/builder/actions/publish-multi-arch-manifest@2026.09.0
         with:
           architectures: ${{ env.ARCHITECTURES }}
           container-registry-password: ${{ secrets.GITHUB_TOKEN }}
           image-name: ${{ env.IMAGE_NAME }}
           image-tags: |
-            ${{ needs.init.outputs.version }}
+            ${{ needs.validate.outputs.version }}
             latest
+          skip-existing: ${{ needs.validate.outputs.version }}

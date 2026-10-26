@@ -18,7 +18,7 @@ The App keeps OpenAI credentials out of Home Assistant options. Codex signs in u
 
 ## Install
 
-1. Add `https://github.com/kecksdigital/codex-hass` to the Home Assistant Add-on Store repositories.
+1. Add `https://github.com/lbouriez/ha.addon.codex` to the Home Assistant Add-on Store repositories.
 2. Install **Codex**.
 3. Review the App options.
 4. Start Codex.
@@ -74,7 +74,7 @@ When Codex or a prompt mentions `/config`, treat it as `/homeassistant` in this 
 | `terminal_theme` | `dark` | Chooses the terminal color theme |
 | `working_directory` | `/homeassistant` | Sets the starting folder |
 | `session_persistence` | `false` | Reattaches terminal sessions through tmux when enabled |
-| `default_model` | `gpt-5.4` | Writes the managed startup model for Codex |
+| `default_model` | blank | Uses the Codex recommended model; set a model ID to override |
 | `codex_permissions` | `workspace` | Selects Codex local sandbox behavior |
 | `codex_approval_policy` | `on-request` | Selects when Codex asks before running actions |
 | `auto_update_codex` | `false` | Optionally updates Codex CLI at startup |
@@ -82,7 +82,9 @@ When Codex or a prompt mentions `/config`, treat it as `/homeassistant` in this 
 
 ## Models
 
-The App starts with `gpt-5.4` because it is a practical default for Home Assistant work. This is only a default, not a lock.
+The App leaves the model unset so the current Codex CLI selects its recommended model for your account. As of 2026-10-26, OpenAI recommends `gpt-6.1-sol` for complex coding when available. See the [current model documentation](https://learn.chatgpt.com/docs/models).
+
+The inherited `gpt-5.4` App option is treated as blank on startup. Clear that option in Home Assistant to save the migration. Previously app-managed model settings are removed; manually configured models and project overrides are preserved.
 
 Change models in either place:
 
@@ -173,7 +175,7 @@ If copying text behaves oddly while tmux is active, hold `Ctrl+Shift` while sele
 
 ## Codex CLI Updates
 
-The image installs Codex CLI during build. For predictable startup, the App does not auto-update Codex by default.
+The image pins Codex CLI `0.164.0`, the stable npm release verified on 2026-10-26. The version is declared in `codex/Dockerfile` as `CODEX_VERSION`. For predictable startup, the App does not auto-update Codex by default.
 
 Enable `auto_update_codex` if you want the App to run this on startup:
 
@@ -181,7 +183,13 @@ Enable `auto_update_codex` if you want the App to run this on startup:
 npm install -g @openai/codex@latest
 ```
 
-The update is bounded by `codex_update_timeout`. If the update fails or times out, the App continues with the image-installed Codex version and logs the failure.
+The update is bounded by `codex_update_timeout`. It is installed as the
+unprivileged `codex` user into the persistent npm prefix under the Codex home,
+so a successful update survives App restarts and image upgrades. If the update
+fails, times out, or cannot execute, the App continues with the image-installed
+Codex version and logs the failure.
+
+When an image update bundles a newer CLI than your persistent installation, the managed terminal selects the newer image version. An unusable persistent installation also falls back to the image.
 
 When you run npm global installs from the interactive terminal, the App uses a persistent user-owned npm cache and prefix under the Codex user's home directory. That keeps `npm install -g @openai/codex@latest` writable for the unprivileged runtime user and makes the installed `codex` binary available on `PATH` in later sessions.
 
@@ -192,7 +200,7 @@ Home Assistant App updates are separate from Codex CLI updates.
 The App version comes from `codex/config.yaml`. When a new version is pushed to this repository, the GitHub Actions workflow publishes matching images to:
 
 ```text
-ghcr.io/kecksdigital/codex-hass:<version>
+ghcr.io/lbouriez/ha.addon.codex:<version>
 ```
 
 Home Assistant then sees the higher version and pulls the matching prebuilt image. Enable **Auto update** on the Codex App page if you want Home Assistant to install those App updates automatically.
@@ -266,6 +274,6 @@ Disable `auto_update_codex` unless you specifically need the newest CLI on every
 
 ## Support
 
-- [Repository](https://github.com/kecksdigital/codex-hass)
-- [Issues](https://github.com/kecksdigital/codex-hass/issues)
+- [Repository](https://github.com/lbouriez/ha.addon.codex)
+- [Issues](https://github.com/lbouriez/ha.addon.codex/issues)
 - [Home Assistant Community](https://community.home-assistant.io/)
