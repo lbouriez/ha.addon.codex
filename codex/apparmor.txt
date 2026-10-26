@@ -28,6 +28,7 @@ profile codex flags=(attach_disconnected,mediate_deleted) {
   /etc/** r,
   /usr/** r,
   /lib/** r,
+  /proc/ r,
   /proc/** r,
   /sys/** r,
 
@@ -66,6 +67,7 @@ profile codex flags=(attach_disconnected,mediate_deleted) {
   # Codex and user home
   /root/ r,
   /root/** rwk,
+  /tmp/ r,
   /tmp/** rwk,
 
   # Node.js modules
