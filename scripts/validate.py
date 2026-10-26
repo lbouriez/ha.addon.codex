@@ -18,10 +18,14 @@ def main():
     assert repository['url'] == config['url'] == build['labels']['org.opencontainers.image.source'] == url
     assert config['image'] == 'ghcr.io/lbouriez/ha.addon.codex'
     assert set(config['arch']) == set(build['build_from']) == {'amd64', 'aarch64'}
-    assert set(config['options']) == set(config['schema'])
+    assert set(config['options']) <= set(config['schema'])
+    for key in set(config['schema']) - set(config['options']):
+        assert config['schema'][key].endswith('?'), f'Missing default for required option: {key}'
+    assert config['schema']['yolo_mode'] == 'bool?'
+    assert 'yolo_mode' not in config['options'], 'Keep YOLO optional for existing installations'
     for path in (ROOT / 'codex/translations').glob('*.yaml'):
         translation = yaml.safe_load(path.read_text(encoding='utf-8'))
-        assert set(translation['configuration']) == set(config['options']), path
+        assert set(translation['configuration']) == set(config['schema']), path
     version = config['version']
     assert re.fullmatch(r'\d+\.\d+\.\d+', version), version
     assert f'## [{version}]' in (ROOT / 'codex/CHANGELOG.md').read_text()

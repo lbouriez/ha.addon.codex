@@ -95,7 +95,10 @@ def main(image):
     for enabled in (False, True):
         name = f'codex-smoke-{uuid.uuid4().hex[:10]}'
         options['enable_mcp'] = enabled
-        options['yolo_mode'] = enabled
+        if enabled:
+            options['yolo_mode'] = True
+        else:
+            options.pop('yolo_mode', None)  # Existing pre-YOLO installations.
         options['session_persistence'] = enabled
         options['default_model'] = 'gpt-5.4'
         try:

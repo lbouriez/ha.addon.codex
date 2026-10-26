@@ -14,6 +14,14 @@ MERGE_CONFIG = CODEX_DIR / "rootfs/usr/local/bin/codex-merge-config"
 
 
 class BundledMcpOptionTests(unittest.TestCase):
+    def test_yolo_missing_and_explicit_values(self):
+        expression = re.search(r"^yolo_mode=.*jq -r '([^']+)'", START_SCRIPT.read_text(), re.M)[1]
+        for options, expected in (({}, 'false'), ({'yolo_mode': False}, 'false'), ({'yolo_mode': True}, 'true')):
+            with self.subTest(options=options):
+                result = subprocess.run(['jq', '-r', expression], input=json.dumps(options),
+                                        check=True, capture_output=True, text=True)
+                self.assertEqual(result.stdout.strip(), expected)
+
     def test_explicit_false_is_not_replaced_by_default(self):
         start_text = START_SCRIPT.read_text(encoding="utf-8")
 

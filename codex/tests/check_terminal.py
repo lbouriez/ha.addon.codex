@@ -9,7 +9,7 @@ import time
 import tomllib
 
 options = json.loads(Path('/data/options.json').read_text())
-enabled = options['yolo_mode']
+enabled = options.get('yolo_mode', False)
 persist = options['session_persistence']
 env = dict(os.environ)
 for entry in Path('/proc/1/environ').read_bytes().split(b'\0'):
