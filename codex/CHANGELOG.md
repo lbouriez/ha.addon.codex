@@ -12,6 +12,9 @@ All notable changes to this project will be documented in this file.
 ### Clarified
 - `session_persistence` keeps the terminal and work alive through browser disconnects, but not App/VM restarts. Login and recorded history persist independently.
 
+### Fixed
+- Permit the root terminal supervisor to signal its unprivileged client processes on disconnect under AppArmor.
+
 ## [0.4.1] - 2026-10-26
 
 ### Fixed
