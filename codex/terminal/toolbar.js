@@ -54,6 +54,55 @@
     };
     new ResizeObserver(fit).observe(toolbar);
     term.options.macOptionClickForcesSelection = true;
+
+    // xterm 5.4 skips touch scrolling while application mouse reporting is on.
+    // A finger drag should browse local scrollback, not send mouse/key input to
+    // Codex. Keep taps, long-press selection and multi-touch available to the OS.
+    let touchScroll;
+    const resetTouch = () => { touchScroll = undefined; };
+    term.element.addEventListener('touchstart', event => {
+      resetTouch();
+      if (event.touches.length !== 1 || term.buffer.active.type !== 'normal') return;
+      const touch = event.touches[0];
+      touchScroll = { id: touch.identifier, x: touch.clientX, y: touch.clientY,
+        previousY: touch.clientY, remainder: 0, started: performance.now(), dragging: false };
+    }, { capture: true, passive: true });
+    term.element.addEventListener('touchmove', event => {
+      if (!touchScroll) return;
+      if (event.touches.length !== 1 || term.buffer.active.type !== 'normal') {
+        resetTouch(); return;
+      }
+      const touch = Array.from(event.touches).find(item => item.identifier === touchScroll.id);
+      if (!touch) { resetTouch(); return; }
+      if (!touchScroll.dragging) {
+        const dx = Math.abs(touch.clientX - touchScroll.x);
+        const dy = Math.abs(touch.clientY - touchScroll.y);
+        if (Math.max(dx, dy) < 8) return;
+        if (dx > dy || performance.now() - touchScroll.started > 500 || term.hasSelection()) {
+          resetTouch(); return;
+        }
+        touchScroll.dragging = true;
+      }
+      // Stop xterm's own handler as well, otherwise mouse-reporting-off sessions
+      // scroll twice. At boundaries don't scroll the enclosing HA page instead.
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const height = term.element.querySelector('.xterm-screen').getBoundingClientRect().height / term.rows;
+      if (!height) return;
+      touchScroll.remainder += (touchScroll.previousY - touch.clientY) / height;
+      touchScroll.previousY = touch.clientY;
+      const lines = Math.trunc(touchScroll.remainder);
+      touchScroll.remainder -= lines;
+      if (lines) term.scrollLines(lines);
+    }, { capture: true, passive: false });
+    term.element.addEventListener('touchend', event => {
+      if (touchScroll?.dragging) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+      resetTouch();
+    }, { capture: true, passive: false });
+    term.element.addEventListener('touchcancel', resetTouch, { capture: true, passive: true });
     let lastBackground;
     term.onRender(() => {
       const background = term.options.theme?.background;
@@ -77,7 +126,13 @@
       dialog.querySelector('#dialog-download').hidden = mode !== 'history';
       if (!dialog.open) dialog.showModal();
       field.focus();
-      if (mode !== 'paste') field.select();
+      // Selecting the whole history on touch devices makes swipes manipulate
+      // selection handles instead of scrolling. Copy still selects on demand.
+      if (mode === 'copy' || (mode === 'history' && !matchMedia('(pointer: coarse)').matches)) field.select();
+      else if (mode === 'history') {
+        field.setSelectionRange(0, 0);
+        field.scrollTop = 0;
+      }
     }
     async function copy(value, fallback = true) {
       if (!value) { status.textContent = text.select; return; }

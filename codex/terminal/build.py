@@ -21,6 +21,9 @@ def build(binary, destination):
     else:
         raise RuntimeError("Pinned ttyd HTML / window.term API not found")
     root = Path(__file__).parent
+    # ttyd's bundled page omits this, leaving phones with a ~980px layout.
+    if not re.search(r'<meta\s+[^>]*name=["\']viewport["\']', html, re.I):
+        html = html.replace('</head>', '<meta name="viewport" content="width=device-width, initial-scale=1"></head>')
     extension = ("<style>" + (root / "toolbar.css").read_text() + "</style>"
                  "<script>" + (root / "toolbar.js").read_text() + "</script>")
     output = Path(destination)

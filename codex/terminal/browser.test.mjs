@@ -8,7 +8,7 @@ import { chromium } from 'playwright';
 // multiline paste, history/download/latest, modal close/Escape, ingress iframe,
 // disconnected session, narrow/mobile and desktop layouts. No HA/model calls.
 const name = `codex-browser-${process.pid}`;
-const image = process.env.TEST_IMAGE || 'codex-addon-review:0.5.0';
+const image = process.env.TEST_IMAGE || 'codex-addon-review:0.5.1';
 const basePath = '/api/hassio_ingress/fixture';
 const docker = (...args) => execFileSync('docker', args, { encoding: 'utf8' }).trim();
 let browser, url;
@@ -22,6 +22,62 @@ before(async () => {
   url = `http://${docker('port', name, '7681/tcp')}${basePath}/`;
   browser = await chromium.launch({ headless: true });
   await mkdir('test-results', { recursive: true });
+});
+
+test('phone swipes scroll history with application mouse reporting, including inside ingress', async () => {
+  for (const framed of [false, true]) {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const page = await context.newPage();
+    if (framed) {
+      await page.route('**/touch-frame', route => route.fulfill({ contentType: 'text/html',
+        body: `<meta name="viewport" content="width=device-width, initial-scale=1"><iframe src="${url}" style="position:fixed;inset:0;border:0;width:100%;height:100%"></iframe>` }));
+      await page.goto(new URL('/touch-frame', url).href);
+    } else await page.goto(url);
+    const terminal = framed ? page.frames().find(f => f.url() === url) : page;
+    await terminal.locator('#codex-toolbar').waitFor();
+    await command(terminal, "for i in {1..200}; do printf 'Swipe row %s\\n' \"$i\"; done");
+    await waitText(terminal, 'Swipe row 200');
+    assert.equal(await terminal.evaluate(() => innerWidth), 390, 'phone uses device width');
+    const cdp = await context.newCDPSession(page);
+    async function swipe(from, to, x = 180) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: from }] });
+      for (let i = 1; i <= 12; i++) {
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: from + (to - from) * i / 12 }] });
+      }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    }
+    for (const mouseMode of [false, true]) {
+      await terminal.locator('#latest').click();
+      await command(terminal, mouseMode ? "printf '\\033[?1000h\\033[?1006h'" : "printf '\\033[?1000l\\033[?1006l'");
+      await terminal.waitForFunction(enabled => (window.term.modes.mouseTrackingMode !== 'none') === enabled, mouseMode);
+      // Observe any unintended terminal input caused by a drag (no synthetic scrolling).
+      await terminal.evaluate(() => { window.swipeInput = ''; window.swipeProbe = term.onData(data => { window.swipeInput += data; }); });
+      const bottom = await terminal.evaluate(() => term.buffer.active.viewportY);
+      await swipe(280, 650);
+      await terminal.waitForFunction(previous => term.buffer.active.viewportY < previous, bottom);
+      const older = await terminal.evaluate(() => term.buffer.active.viewportY);
+      assert.ok(bottom - older > 5);
+      assert.ok(bottom - older < 40, 'single swipe does not double-scroll');
+      assert.match(await terminal.locator('.xterm-rows').innerText(), /Swipe row/);
+      await page.screenshot({ path: `test-results/touch-${framed ? 'iframe' : 'direct'}-${mouseMode}.png` });
+      await swipe(650, 280);
+      await terminal.waitForFunction(previous => term.buffer.active.viewportY > previous, older);
+      assert.equal(await terminal.evaluate(() => window.swipeInput), '', 'swipe must not type or send mouse reports');
+      await terminal.evaluate(() => window.swipeProbe.dispose());
+      await terminal.locator('#latest').tap();
+      await terminal.waitForFunction(() => term.buffer.active.viewportY === term.buffer.active.baseY);
+    }
+    await terminal.locator('#history').tap();
+    const field = terminal.locator('#codex-dialog textarea');
+    assert.equal(await field.evaluate(el => el.selectionEnd - el.selectionStart), 0, 'history starts scrollable, not selected');
+    const box = await field.boundingBox();
+    const before = await field.evaluate(el => el.scrollTop);
+    await swipe(box.y + box.height - 30, box.y + 30, box.x + box.width / 2);
+    await field.evaluate(el => el.scrollTop); // Flush browser scroll/render work before assertion.
+    await terminal.waitForFunction(previous => document.querySelector('#codex-dialog textarea').scrollTop > previous, before);
+    await terminal.locator('#dialog-close').tap();
+    await context.close();
+  }
 });
 after(async () => {
   await browser?.close();
@@ -42,8 +98,9 @@ async function waitText(page, expected) {
 }
 async function command(page, value) {
   await page.locator('.xterm-helper-textarea').focus();
-  await page.keyboard.insertText(value);
-  await page.keyboard.press('Enter');
+  const keyboard = page.keyboard || page.page().keyboard;
+  await keyboard.insertText(value);
+  await keyboard.press('Enter');
 }
 async function fit(page) {
   await page.waitForFunction(() => document.querySelector('#codex-toolbar').getBoundingClientRect().bottom

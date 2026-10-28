@@ -18,4 +18,6 @@ body.codex-terminal #terminal-container { position: fixed; inset: var(--toolbar-
 #codex-dialog [hidden] { display: none; }
 #codex-dialog .primary { background: var(--bar-accent); color: #11111b; }
 .codex-terminal .xterm-viewport { scrollbar-color: #7f849c transparent; scrollbar-width: auto; }
+.codex-terminal .xterm { overscroll-behavior: contain; }
+#codex-dialog textarea { touch-action: pan-y pinch-zoom; overscroll-behavior: contain; }
 @media (max-width: 480px) { #codex-toolbar { padding: 7px 8px; } #codex-toolbar .actions { gap: 5px; } #codex-toolbar button { padding: 7px 9px; } #codex-toolbar strong { width: 100%; } #codex-dialog { padding: 14px; } }
