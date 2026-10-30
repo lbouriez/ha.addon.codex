@@ -12,6 +12,10 @@
     historyHint: 'Historique disponible dans ce navigateur. Vous pouvez sélectionner, copier ou télécharger le texte.',
     historyTitle: 'Historique du terminal', empty: 'Aucun texte à insérer.',
     inserted: 'Texte inséré dans le terminal.', latestHint: 'Retour au bas du terminal.',
+    image: 'Image', uploading: 'Envoi de l’image…', imageReady: 'Image enregistrée, chemin inséré. Ajoutez votre demande puis appuyez sur Entrée.',
+    imageFailed: 'Impossible d’envoyer l’image. Réessayez ou utilisez le bouton Image.',
+    imageSize: 'Choisissez une image PNG, JPEG, GIF ou WebP de moins de 10 Mo.',
+    imageSaved: 'Image enregistrée : ', imageBusy: 'Une image est déjà en cours d’envoi.',
   } : {
     copy: 'Copy', paste: 'Paste', history: 'History', latest: 'Latest',
     hint: 'Select text (Shift + drag if needed). Ctrl/Cmd + C and V; Ctrl + C without a selection interrupts the command.',
@@ -22,6 +26,10 @@
     historyHint: 'History available in this browser. Select, copy or download the text.',
     historyTitle: 'Terminal history', empty: 'No text to insert.',
     inserted: 'Text inserted into the terminal.', latestHint: 'Returned to the latest output.',
+    image: 'Image', uploading: 'Uploading image…', imageReady: 'Image saved, path inserted. Add your request, then press Enter.',
+    imageFailed: 'Image upload failed. Try again or use the Image button.',
+    imageSize: 'Choose a PNG, JPEG, GIF or WebP image smaller than 10 MB.',
+    imageSaved: 'Image saved: ', imageBusy: 'An image is already uploading.',
   };
 
   function attach(term) {
@@ -29,7 +37,7 @@
     const toolbar = document.createElement('section');
     toolbar.id = 'codex-toolbar';
     toolbar.setAttribute('aria-label', 'Codex terminal');
-    toolbar.innerHTML = `<div class="actions"><strong>Codex</strong><button id="copy">${text.copy}</button><button id="paste">${text.paste}</button><button id="history">${text.history}</button><button id="latest">${text.latest}</button></div><p role="status" aria-live="polite"></p>`;
+    toolbar.innerHTML = `<div class="actions"><strong>Codex</strong><button id="copy">${text.copy}</button><button id="paste">${text.paste}</button><button id="image">${text.image}</button><button id="history">${text.history}</button><button id="latest">${text.latest}</button></div><p role="status" aria-live="polite"></p>`;
     document.body.append(toolbar);
     const status = toolbar.querySelector('[role=status]');
     status.textContent = text.hint;
@@ -42,6 +50,11 @@
     const action = dialog.querySelector('#dialog-action');
     let dialogMode;
     let selection = '';
+    const imagePicker = document.createElement('input');
+    imagePicker.type = 'file';
+    imagePicker.accept = 'image/png,image/jpeg,image/gif,image/webp';
+    imagePicker.hidden = true;
+    toolbar.append(imagePicker);
     term.onSelectionChange(() => { selection = term.getSelection(); });
     // Buttons must not steal a terminal selection before a click can copy it.
     toolbar.addEventListener('mousedown', event => {
@@ -160,10 +173,76 @@
       status.textContent = text.inserted;
       term.focus();
     }
-    async function paste() {
-      try { insert(await navigator.clipboard.readText()); }
-      catch { show('paste'); }
+    let uploading = false;
+    const imageTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+    const uploadUrl = kind => new URL(`${location.pathname.replace(/\/?$/, '/')}codex-upload-${kind}`, location.origin);
+    async function uploadImage(file, target = null) {
+      if (uploading) { status.textContent = text.imageBusy; return; }
+      if (!imageTypes.includes(file.type) || !file.size || file.size >= 10 * 1024 * 1024) {
+        status.textContent = text.imageSize; return;
+      }
+      uploading = true;
+      status.textContent = text.uploading;
+      toolbar.querySelector('#image').disabled = true;
+      try {
+        const signal = AbortSignal.timeout(45000);
+        const session = await fetch(uploadUrl('token'), { cache: 'no-store', signal });
+        if (!session.ok) throw new Error('token');
+        const { token } = await session.json();
+        const response = await fetch(uploadUrl('image'), { method: 'POST', signal,
+          headers: { 'Content-Type': file.type, 'X-Codex-Upload-Token': token }, body: file });
+        if (!response.ok) throw new Error('upload');
+        const { path } = await response.json();
+        if (!/^\/homeassistant\/tmp\/codex\/[a-f0-9]{32}\.(png|jpg|gif|webp)$/.test(path)) throw new Error('path');
+        const value = ` ${path} `;
+        if (target === field && dialog.open && dialogMode === 'paste') {
+          field.setRangeText(value, field.selectionStart, field.selectionEnd, 'end');
+          field.focus();
+        } else if (!target && window.term === term && !term.options.disableStdin) {
+          insert(value);
+        } else {
+          // A disconnected terminal or closed dialog must not receive late input.
+          status.textContent = text.imageSaved + path;
+          return;
+        }
+        status.textContent = text.imageReady;
+      } catch {
+        status.textContent = text.imageFailed;
+      } finally {
+        uploading = false;
+        toolbar.querySelector('#image').disabled = false;
+      }
     }
+    // Capture images before xterm interprets a paste as text. Leave text-only
+    // events untouched, including bracketed paste and the manual paste dialog.
+    document.addEventListener('paste', event => {
+      const target = event.target;
+      const inField = target === field && dialogMode === 'paste';
+      if (!term.element.contains(target) && !inField) return;
+      const file = Array.from(event.clipboardData?.files || []).find(item => item.type.startsWith('image/'));
+      if (!file) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void uploadImage(file, inField ? field : null);
+    }, true);
+    async function paste() {
+      try {
+        if (navigator.clipboard.read) {
+          const items = await navigator.clipboard.read();
+          for (const item of items) {
+            const type = item.types.find(type => imageTypes.includes(type));
+            if (type) { await uploadImage(await item.getType(type)); return; }
+          }
+        }
+        insert(await navigator.clipboard.readText());
+      } catch { show('paste'); }
+    }
+    toolbar.querySelector('#image').onclick = () => imagePicker.click();
+    imagePicker.onchange = () => {
+      const file = imagePicker.files[0];
+      imagePicker.value = '';
+      if (file) void uploadImage(file);
+    };
     function history() {
       const buffer = term.buffer.active;
       const lines = [];

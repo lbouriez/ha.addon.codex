@@ -127,6 +127,8 @@ def main(image):
             docker('exec', name, 'env', 'CODEX_HOME=/tmp/codex-smoke', 'codex', 'mcp', 'list')
             docker('cp', str(ROOT / 'codex/tests/check_terminal.py'), f'{name}:/tmp/check_terminal.py')
             print(docker('exec', name, 'python3', '/tmp/check_terminal.py'))
+            docker('cp', str(ROOT / 'codex/tests/check_image_upload.py'), f'{name}:/tmp/check_image_upload.py')
+            print(docker('exec', name, 'su-exec', '22000:0', 'python3', '/tmp/check_image_upload.py'))
             print(f'PASS {image}: terminal ready; MCP={enabled}; legacy model migration')
         except Exception:
             logs = subprocess.run(['docker', 'logs', name], capture_output=True, text=True)

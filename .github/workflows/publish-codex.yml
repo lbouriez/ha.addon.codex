@@ -29,7 +29,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-      - run: python -m pip install PyYAML==6.0.3
+      - run: python -m pip install PyYAML==6.0.3 'aiohttp>=3.13,<4'
       - name: Validate add-on metadata and ownership
         id: metadata
         run: python scripts/validate.py

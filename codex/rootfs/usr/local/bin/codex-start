@@ -137,6 +137,11 @@ In this App container, paths are mapped differently than HA Core:
 
 When users mention `/config/...`, translate to `/homeassistant/...`
 
+Images pasted or selected in the terminal UI are saved under
+`/homeassistant/tmp/codex` and their local paths are inserted into the prompt.
+When the user asks about one of these images, open it with the available image
+viewing tool to inspect its contents. These are local files, not remote URLs.
+
 ## Available Paths
 
 | Path | Description | Access |
@@ -249,9 +254,8 @@ else
   colors='{"background":"#eff1f5","foreground":"#4c4f69","cursor":"#dc8a78"}'
 fi
 
-exec ttyd \
+exec /usr/local/bin/codex-web \
   --debug 3 \
-  --port 7681 \
   --writable \
   --index /usr/share/codex/terminal.html \
   --ping-interval 30 \

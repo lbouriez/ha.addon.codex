@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Run the upload writer without root privileges, alongside the existing terminal.
+# All three services share the HA ingress listener; internal ports are loopback-only.
+pids=()
+cleanup() {
+  trap - EXIT TERM INT
+  if [[ ${#pids[@]} -gt 0 ]]; then
+    kill "${pids[@]}" 2>/dev/null || true
+    wait "${pids[@]}" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+trap 'exit 0' TERM INT
+su-exec 22000:0 python3 /usr/local/lib/codex_upload.py &
+pids+=("$!")
+ttyd --interface lo --port 7682 "$@" &
+pids+=("$!")
+nginx -e stderr -c /etc/codex-nginx.conf -g 'daemon off;' &
+pids+=("$!")
+# Restart the container if any service fails rather than leaving a partial UI.
+wait -n "${pids[@]}"
+exit 1

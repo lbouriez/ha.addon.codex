@@ -8,13 +8,13 @@ import { chromium } from 'playwright';
 // multiline paste, history/download/latest, modal close/Escape, ingress iframe,
 // disconnected session, narrow/mobile and desktop layouts. No HA/model calls.
 const name = `codex-browser-${process.pid}`;
-const image = process.env.TEST_IMAGE || 'codex-addon-review:0.5.1';
+const image = process.env.TEST_IMAGE || 'codex-addon-review:0.5.2';
 const basePath = '/api/hassio_ingress/fixture';
 const docker = (...args) => execFileSync('docker', args, { encoding: 'utf8' }).trim();
 let browser, url;
 before(async () => {
   docker('run', '-d', '--rm', '--name', name, '-p', '127.0.0.1::7681',
-    '--entrypoint', 'ttyd', image, '-p', '7681', '-W', '-b', basePath,
+    '--entrypoint', 'bash', image, '-c', 'chmod g+w /homeassistant; exec codex-web "$@"', '--', '-W', '-b', basePath,
     '-I', '/usr/share/codex/terminal.html', '-t', 'disableLeaveAlert=true',
     '-t', 'rendererType=dom', '-t', 'scrollback=10000',
     '-t', 'theme={"background":"#1e1e2e","foreground":"#cdd6f4"}',
@@ -82,6 +82,74 @@ test('phone swipes scroll history with application mouse reporting, including in
 after(async () => {
   await browser?.close();
   try { docker('rm', '-f', name); } catch { /* Already removed. */ }
+});
+
+test('image paste and phone picker save readable files and insert paths without submitting', async () => {
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==', 'base64');
+  for (const framed of [false, true]) {
+    const context = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'],
+      viewport: { width: 390, height: 844 }, hasTouch: true });
+    const page = await context.newPage();
+    if (framed) {
+      await page.route('**/image-frame', route => route.fulfill({ contentType: 'text/html',
+        body: `<iframe src="${url}" allow="clipboard-read 'none'; clipboard-write 'none'" style="position:fixed;inset:0;border:0;width:100%;height:100%"></iframe>` }));
+      await page.goto(new URL('/image-frame', url).href);
+    } else await page.goto(url);
+    const terminal = framed ? page.frames().find(f => f.url() === url) : page;
+    await terminal.locator('#codex-toolbar').waitFor();
+    await waitText(terminal, 'bash-');
+    await terminal.evaluate(() => { window.imageInput = ''; term.onData(data => { window.imageInput += data; }); });
+    await page.evaluate(async bytes => {
+      // Browser writes an actual image to the system clipboard, not a synthetic
+      // paste event; the following keyboard action exercises xterm interception.
+      const blob = new Blob([Uint8Array.from(bytes)], { type: 'image/png' });
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    }, [...png]);
+    if (framed) {
+      await terminal.locator('#paste').click();
+      await terminal.locator('#codex-dialog textarea').focus();
+    } else await terminal.locator('.xterm-helper-textarea').focus();
+    await page.keyboard.press('Control+v');
+    await terminal.waitForFunction(() => document.querySelector('#codex-toolbar [role=status]').textContent.includes('Image saved, path inserted'));
+    if (framed) {
+      assert.equal(await terminal.evaluate(() => window.imageInput), '', 'manual dialog waits for Insert');
+      await terminal.locator('#dialog-action').click();
+    }
+    let input = await terminal.evaluate(() => window.imageInput);
+    assert.doesNotMatch(input, /[\r\n]/, 'never submit the prompt');
+    const path = input.match(/\/homeassistant\/tmp\/codex\/[a-f0-9]{32}\.png/)[0];
+    assert.ok(Buffer.from(docker('exec', '--user', '22000:0', name, 'base64', '-w', '0', path), 'base64')
+      .subarray(0, 8).equals(png.subarray(0, 8)), 'Codex user can read the pasted PNG');
+    if (!framed) {
+      await terminal.evaluate(() => { window.imageInput = ''; });
+      await terminal.locator('#paste').click();
+      await terminal.waitForFunction(() => window.imageInput.includes('/homeassistant/tmp/codex/'));
+      assert.doesNotMatch(await terminal.evaluate(() => window.imageInput), /[\r\n]/);
+      await page.screenshot({ path: 'test-results/image-paste-mobile.png' });
+    }
+    // Native text paste still works after image paste.
+    await page.evaluate(() => navigator.clipboard.writeText(' describe this image'));
+    await terminal.locator('.xterm-helper-textarea').focus();
+    await page.keyboard.press('Control+v');
+    await terminal.waitForFunction(() => window.imageInput.includes('describe this image'));
+    // File chooser is available without clipboard permissions on a phone.
+    await terminal.evaluate(() => { window.imageInput = ''; });
+    const chooserPromise = page.waitForEvent('filechooser');
+    await terminal.locator('#image').tap();
+    await (await chooserPromise).setFiles({ name: '../../bad name.png', mimeType: 'image/png', buffer: png });
+    await terminal.waitForFunction(() => window.imageInput.includes('/homeassistant/tmp/codex/'));
+    input = await terminal.evaluate(() => window.imageInput);
+    assert.doesNotMatch(input, /[\r\n]/);
+    const pickedPath = input.match(/\/homeassistant\/tmp\/codex\/[a-f0-9]{32}\.png/)[0];
+    assert.notEqual(pickedPath, path);
+    assert.equal(docker('exec', '--user', '22000:0', name, 'base64', '-w', '0', pickedPath), png.toString('base64'));
+    await terminal.evaluate(() => { window.imageInput = ''; });
+    await page.route('**/codex-upload-image', route => route.fulfill({ status: 503, body: 'Disk full' }));
+    await terminal.locator('input[type=file]').setInputFiles({ name: 'failed.png', mimeType: 'image/png', buffer: png });
+    await terminal.waitForFunction(() => document.querySelector('#codex-toolbar [role=status]').textContent.includes('Image upload failed'));
+    assert.equal(await terminal.evaluate(() => window.imageInput), '', 'failed upload must not insert a path');
+    await context.close();
+  }
 });
 
 async function terminalText(page) {

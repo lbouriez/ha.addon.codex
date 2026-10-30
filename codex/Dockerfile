@@ -29,6 +29,7 @@ RUN apk add --no-cache \
     nano \
     ncurses \
     ncurses-terminfo-base \
+    nginx \
     nodejs \
     npm \
     openssh-client \
@@ -92,6 +93,7 @@ RUN chmod +x \
     /usr/local/bin/codex-select-cli \
     /usr/local/bin/codex-session \
     /usr/local/bin/codex-start \
+    /usr/local/bin/codex-web \
     && chmod 440 /etc/sudoers.d/codex-ha
 
 RUN cat > /etc/tmux.conf << 'EOF'

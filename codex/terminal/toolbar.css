@@ -8,7 +8,7 @@ body.codex-terminal #terminal-container { position: fixed; inset: var(--toolbar-
 #codex-toolbar button, #codex-dialog button { font: inherit; color: inherit; background: var(--bar-button); border: 1px solid var(--bar-border); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
 #codex-toolbar button:hover, #codex-dialog button:hover { border-color: var(--bar-accent); }
 #codex-toolbar button:focus-visible, #codex-dialog :focus-visible { outline: 2px solid var(--bar-accent); outline-offset: 2px; }
-#codex-toolbar p { font-size: 12px; margin: 6px 0 0; }
+#codex-toolbar p { font-size: 12px; margin: 6px 0 0; overflow-wrap: anywhere; }
 #codex-dialog { border: 1px solid var(--bar-border); border-radius: 10px; padding: 20px; width: min(720px, calc(100vw - 56px)); max-height: calc(100dvh - 60px); box-sizing: border-box; }
 #codex-dialog::backdrop { background: #0009; }
 #codex-dialog h2 { margin: 0; font-size: 18px; }
