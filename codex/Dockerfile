@@ -122,6 +122,9 @@ RUN echo 'source /etc/codex.bashrc' > /root/.profile
 
 ENV PATH="/root/.local/bin:${PATH}"
 
+# SQLite can spill index builds to disk. Use the temp directory allowed by AppArmor.
+ENV SQLITE_TMPDIR=/tmp
+
 WORKDIR /homeassistant
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=5 \

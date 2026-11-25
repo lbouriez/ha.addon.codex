@@ -29,7 +29,9 @@ if '--version' in sys.argv:
     print('codex-cli 999.0.0')
     raise SystemExit
 root=Path(os.environ['HOME'])
-(root/'launch.json').write_text(json.dumps({'pid':os.getpid(),'args':sys.argv[1:]}))
+(root/'launch.json').write_text(json.dumps({
+    'pid': os.getpid(), 'args': sys.argv[1:], 'sqlite_tmpdir': os.environ.get('SQLITE_TMPDIR'),
+}))
 while True:
     (root/'heartbeat').write_text(str(time.monotonic()))
     time.sleep(0.1)
@@ -69,6 +71,7 @@ try:
     first = connect()
     wait_for(lambda: (root/'heartbeat').exists())
     launch = json.loads((root/'launch.json').read_text())
+    assert launch['sqlite_tmpdir'] == '/tmp', launch
     expected = ['--no-alt-screen'] if options.get('preserve_terminal_history', True) else []
     if options.get('reasoning_effort', 'default') != 'default':
         expected += ['-c', 'model_reasoning_effort="' + options['reasoning_effort'] + '"']
