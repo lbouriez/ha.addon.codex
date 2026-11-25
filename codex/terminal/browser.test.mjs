@@ -425,7 +425,7 @@ test('denied microphone offers editable keyboard dictation and inserts a single 
     const frame = page.frames().find(child => child.url() === url);
     await frame.locator('#dictate').tap();
     const dialog = frame.locator('#codex-dialog');
-    assert.match(await dialog.locator('p').innerText(), /Microphone access denied.*keyboard has a microphone/);
+    assert.match(await dialog.locator('p').innerText(), /Microphone access denied.*use its microphone/);
     await waitText(frame, 'bash-');
     await frame.evaluate(() => { window.dictatedInput = ''; term.onData(data => { window.dictatedInput += data; }); });
     await dialog.locator('textarea').fill('# Keyboard dictation\nsecond line');
@@ -434,6 +434,54 @@ test('denied microphone offers editable keyboard dictation and inserts a single 
     await dialog.waitFor({ state: 'hidden' });
     const input = await frame.evaluate(() => window.dictatedInput);
     assert.equal(input.replace(/^\x1b\[200~|\x1b\[201~$/g, ''), '# Keyboard dictation second line');
+  } finally {
+    await context.close();
+  }
+});
+
+test('Android HTTP editors stay above an overlay keyboard and insert drafts without submitting', async () => {
+  const context = await browser.newContext({ isMobile: true, hasTouch: true, viewport: { width: 360, height: 720 } });
+  try {
+    await context.addInitScript(() => {
+      Object.defineProperty(window, 'isSecureContext', { value: false });
+      window.SpeechRecognition = class {
+        constructor() { throw new Error('HTTP should use the keyboard'); }
+      };
+    });
+    const page = await context.newPage();
+    await page.route('**/overlay-keyboard', route => route.fulfill({ contentType: 'text/html', body: `
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <iframe src="${url}" style="position:fixed;inset:48px 0 0;border:0;width:100%;height:calc(100% - 48px)"></iframe>
+      <div id="keyboard" hidden style="position:fixed;inset:410px 0 0;background:#eee"></div>` }));
+    await page.goto(new URL('/overlay-keyboard', url).href);
+    const frame = page.frames().find(child => child.url() === url);
+    await waitText(frame, 'bash-');
+    for (const selector of ['#write', '#dictate']) {
+      await frame.evaluate(() => { window.editorInput = ''; });
+      const subscription = await frame.evaluateHandle(() => term.onData(data => { window.editorInput += data; }));
+      await frame.locator(selector).tap();
+      const dialog = frame.locator('#codex-dialog');
+      const field = dialog.locator('textarea');
+      assert.equal(await field.evaluate(node => document.activeElement === node), true);
+      if (selector === '#dictate') assert.match(await dialog.locator('p').innerText(), /On HTTP, use your keyboard microphone/);
+      await page.evaluate(() => { document.querySelector('#keyboard').hidden = false; });
+      const button = dialog.getByRole('button', { name: 'Insert' });
+      const keyboard = await page.locator('#keyboard').boundingBox();
+      const fieldBox = await field.boundingBox();
+      const buttonBox = await button.boundingBox();
+      assert.ok(fieldBox.y + fieldBox.height < keyboard.y, 'editable field stays above the keyboard');
+      assert.ok(buttonBox.y + buttonBox.height < keyboard.y, 'Insert stays reachable');
+      await field.fill('# draft\nsecond line');
+      assert.equal(await frame.evaluate(() => window.editorInput), '');
+      await button.tap();
+      await dialog.waitFor({ state: 'hidden' });
+      const input = await frame.evaluate(() => window.editorInput);
+      assert.equal(input.replace(/^\x1b\[200~|\x1b\[201~$/g, ''), '# draft second line');
+      assert.equal(await frame.locator(selector).evaluate(node => document.activeElement === node), true);
+      await subscription.evaluate(value => value.dispose());
+      await subscription.dispose();
+      await page.evaluate(() => { document.querySelector('#keyboard').hidden = true; });
+    }
   } finally {
     await context.close();
   }

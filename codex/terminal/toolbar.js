@@ -9,6 +9,8 @@
     manualCopy: 'Copiez le texte sélectionné avec Ctrl/Cmd + C ou le menu de votre appareil.',
     manualPaste: 'Collez ici avec Ctrl/Cmd + V ou le menu de votre appareil, puis cliquez sur Insérer. Aucun Entrée n’est ajouté.',
     insert: 'Insérer', close: 'Fermer', download: 'Télécharger',
+    write: 'Écrire', writeHelp: 'Écrivez votre texte, puis touchez Insérer pour le placer dans le brouillon.',
+    writeInserted: 'Texte inséré. Appuyez sur Entrée pour l’envoyer.',
     historyHint: 'Historique disponible dans ce navigateur. Vous pouvez sélectionner, copier ou télécharger le texte.',
     historyTitle: 'Historique du terminal', empty: 'Aucun texte à insérer.',
     inserted: 'Texte inséré dans le terminal.', latestHint: 'Retour au bas du terminal.',
@@ -16,11 +18,11 @@
     dictationStarting: 'Activation du micro…', dictationListening: 'Écoute en cours. Cliquez sur Arrêter pour terminer.',
     dictationFinishing: 'Transcription en cours…', dictationEmpty: 'Aucune parole détectée. Réessayez.',
     dictationCancelled: 'Dictée annulée.', dictationInserted: 'Dictée insérée. Relisez le texte, puis appuyez sur Entrée pour l’envoyer.',
-    dictationHttps: 'Ouvrez Home Assistant en HTTPS pour utiliser le micro du navigateur.',
+    dictationHttps: 'Le micro du navigateur exige une adresse HTTPS. En HTTP, utilisez le micro du clavier.',
     dictationBlocked: 'Accès au micro refusé. Vérifiez les permissions de Home Assistant et du navigateur.',
     dictationUnavailable: 'La dictée intégrée est indisponible dans cette vue.',
     dictationFailed: 'Le service de dictée n’a pas pu transcrire votre voix.',
-    dictationKeyboard: 'Si votre clavier propose un micro, touchez le champ et utilisez-le, puis cliquez sur Insérer.',
+    dictationKeyboard: 'Touchez le champ pour ouvrir le clavier, puis utilisez son micro et touchez Insérer.',
     image: 'Image', uploading: 'Envoi de l’image…', imageReady: 'Image enregistrée, chemin inséré. Ajoutez votre demande puis appuyez sur Entrée.',
     imageFailed: 'Impossible d’envoyer l’image. Réessayez ou utilisez le bouton Image.',
     imageSize: 'Choisissez une image PNG, JPEG, GIF ou WebP de moins de 10 Mo.',
@@ -32,6 +34,8 @@
     manualCopy: 'Copy the selected text with Ctrl/Cmd + C or your device’s menu.',
     manualPaste: 'Paste here with Ctrl/Cmd + V or your device’s menu, then choose Insert. No Enter is added.',
     insert: 'Insert', close: 'Close', download: 'Download',
+    write: 'Write', writeHelp: 'Write your text, then tap Insert to add it to your draft.',
+    writeInserted: 'Text inserted. Press Enter to send it.',
     historyHint: 'History available in this browser. Select, copy or download the text.',
     historyTitle: 'Terminal history', empty: 'No text to insert.',
     inserted: 'Text inserted into the terminal.', latestHint: 'Returned to the latest output.',
@@ -39,11 +43,11 @@
     dictationStarting: 'Starting microphone…', dictationListening: 'Listening. Select Stop when you’re done.',
     dictationFinishing: 'Transcribing…', dictationEmpty: 'No speech detected. Try again.',
     dictationCancelled: 'Dictation canceled.', dictationInserted: 'Dictation inserted. Review the text, then press Enter to send it.',
-    dictationHttps: 'Open Home Assistant over HTTPS to use the browser microphone.',
+    dictationHttps: 'The browser microphone requires an HTTPS address. On HTTP, use your keyboard microphone.',
     dictationBlocked: 'Microphone access denied. Check the Home Assistant and browser permissions.',
     dictationUnavailable: 'Built-in dictation is unavailable in this view.',
     dictationFailed: 'The dictation service could not transcribe your voice.',
-    dictationKeyboard: 'If your keyboard has a microphone, tap the field and use it, then select Insert.',
+    dictationKeyboard: 'Tap the field to open the keyboard, then use its microphone and select Insert.',
     image: 'Image', uploading: 'Uploading image…', imageReady: 'Image saved, path inserted. Add your request, then press Enter.',
     imageFailed: 'Image upload failed. Try again or use the Image button.',
     imageSize: 'Choose a PNG, JPEG, GIF or WebP image smaller than 10 MB.',
@@ -55,7 +59,7 @@
     const toolbar = document.createElement('section');
     toolbar.id = 'codex-toolbar';
     toolbar.setAttribute('aria-label', 'Codex terminal');
-    toolbar.innerHTML = `<div class="actions"><strong>Codex</strong><button id="copy">${text.copy}</button><button id="paste">${text.paste}</button><button id="dictate">${text.dictate}</button><button id="image">${text.image}</button><button id="history">${text.history}</button><button id="latest">${text.latest}</button></div><p role="status" aria-live="polite"></p>`;
+    toolbar.innerHTML = `<div class="actions"><strong>Codex</strong><button id="copy">${text.copy}</button><button id="paste">${text.paste}</button><button id="write">${text.write}</button><button id="dictate">${text.dictate}</button><button id="image">${text.image}</button><button id="history">${text.history}</button><button id="latest">${text.latest}</button></div><p role="status" aria-live="polite"></p>`;
     document.body.append(toolbar);
     const status = toolbar.querySelector('[role=status]');
     status.textContent = text.hint;
@@ -66,6 +70,8 @@
     document.body.append(dialog);
     const field = dialog.querySelector('textarea');
     const action = dialog.querySelector('#dialog-action');
+    const touchPrimary = matchMedia('(pointer: coarse)');
+    const touchEditor = () => dialog.hasAttribute('data-touch-editor');
     let dialogMode;
     let selection = '';
     const imagePicker = document.createElement('input');
@@ -74,9 +80,12 @@
     imagePicker.hidden = true;
     toolbar.append(imagePicker);
     term.onSelectionChange(() => { selection = term.getSelection(); });
-    // Buttons must not steal a terminal selection before a click can copy it.
+    // Keep the selection for Copy and let the mobile editors take native focus.
     toolbar.addEventListener('mousedown', event => {
-      if (event.target.closest('button')) event.preventDefault();
+      const button = event.target.closest('button');
+      if (button && !(touchPrimary.matches && (button.id === 'write' || button.id === 'dictate'))) {
+        event.preventDefault();
+      }
     });
 
     // Ingress uses a same-origin iframe. The Android keyboard can shrink the
@@ -87,6 +96,7 @@
       views.push({ view, frame });
       if (!frame) break;
     }
+    let previousBottom;
     const fit = () => {
       let top = 0;
       let bottom = window.innerHeight;
@@ -100,7 +110,7 @@
         }
         if (frame) {
           const padding = view.parent.getComputedStyle(frame).paddingTop;
-          frameTop += frame.getBoundingClientRect().top + frame.clientTop + parseFloat(padding);
+          frameTop += frame.getBoundingClientRect().top + frame.clientTop + (parseFloat(padding) || 0);
         }
       }
       const style = document.documentElement.style;
@@ -108,6 +118,10 @@
       style.setProperty('--viewport-bottom', `${Math.ceil(window.innerHeight - bottom)}px`);
       style.setProperty('--toolbar-height', `${toolbar.offsetHeight}px`);
       term.fit();
+      if (bottom < previousBottom && touchPrimary.matches && term.element.contains(document.activeElement)) {
+        term.scrollToBottom();
+      }
+      previousBottom = bottom;
     };
     const listeners = new AbortController();
     const options = { passive: true, signal: listeners.signal };
@@ -196,7 +210,8 @@
     function show(mode, value = '', help) {
       cancelDictation();
       dialogMode = mode;
-      const editable = mode === 'paste' || mode === 'dictate';
+      const editable = mode !== 'history' && mode !== 'copy';
+      dialog.toggleAttribute('data-touch-editor', editable && touchPrimary.matches);
       dialog.querySelector('h2').textContent = mode === 'history' ? text.historyTitle : text[mode];
       dialog.querySelector('p').textContent = help ?? (mode === 'paste' ? text.manualPaste : mode === 'history' ? text.historyHint : text.manualCopy);
       field.readOnly = !editable;
@@ -207,7 +222,7 @@
       field.focus();
       // Selecting the whole history on touch devices makes swipes manipulate
       // selection handles instead of scrolling. Copy still selects on demand.
-      if (mode === 'copy' || (mode === 'history' && !matchMedia('(pointer: coarse)').matches)) field.select();
+      if (mode === 'copy' || (mode === 'history' && !touchPrimary.matches)) field.select();
       else if (mode === 'history') {
         field.setSelectionRange(0, 0);
         field.scrollTop = 0;
@@ -232,23 +247,24 @@
         } catch { /* Native menu / keyboard copy remains available. */ }
       }
     }
-    function insert(value, message = text.inserted) {
+    function insert(value, message = text.inserted, focusTerminal = true) {
       if (!value) { status.textContent = text.empty; return; }
       // xterm handles bracketed paste; never send text as synthetic key events.
       term.paste(value);
       status.textContent = message;
-      term.focus();
+      if (focusTerminal) term.focus();
+      else term.scrollToBottom();
     }
 
     const dictateButton = toolbar.querySelector('#dictate');
     let dictation;
 
-    function insertDictation(value) {
-      // Keep line breaks and terminal control characters out of dictated input.
-      const transcript = value.replace(/[\t\r\n\u0085\u2028\u2029]+/g, ' ')
+    function insertDraft(value, message, focusTerminal = true) {
+      // Keep line breaks and terminal control characters out of draft input.
+      const draft = value.replace(/[\t\r\n\u0085\u2028\u2029]+/g, ' ')
         .replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim();
-      if (transcript) insert(transcript, text.dictationInserted);
-      return Boolean(transcript);
+      if (draft) insert(draft, message, focusTerminal);
+      return Boolean(draft);
     }
 
     function resetDictation(session) {
@@ -281,7 +297,7 @@
         status.textContent = text.dictationCancelled;
         return;
       }
-      if (insertDictation(session.results.filter(Boolean).join(' '))) return;
+      if (insertDraft(session.results.filter(Boolean).join(' '), text.dictationInserted)) return;
       if (failure) dictationFallback(failure);
       else status.textContent = text.dictationEmpty;
     }
@@ -438,15 +454,21 @@
     }
     toolbar.querySelector('#copy').onclick = () => copy(selection);
     toolbar.querySelector('#paste').onclick = paste;
+    toolbar.querySelector('#write').onclick = () => show('write', '', text.writeHelp);
     toolbar.querySelector('#history').onclick = history;
     toolbar.querySelector('#latest').onclick = () => {
       term.scrollToBottom(); term.focus(); status.textContent = text.latestHint;
     };
     dialog.querySelector('#dialog-close').onclick = () => dialog.close();
-    dialog.addEventListener('close', () => { field.value = ''; term.focus(); });
+    dialog.addEventListener('close', () => {
+      field.value = '';
+      if (touchEditor() && dialogMode !== 'paste') toolbar.querySelector(`#${dialogMode}`).focus({ preventScroll: true });
+      else term.focus();
+    });
     action.onclick = () => {
-      if (dialogMode === 'dictate') {
-        if (insertDictation(field.value)) dialog.close();
+      if (dialogMode === 'dictate' || dialogMode === 'write') {
+        const message = dialogMode === 'dictate' ? text.dictationInserted : text.writeInserted;
+        if (insertDraft(field.value, message, !touchEditor())) dialog.close();
         else status.textContent = text.empty;
       } else if (dialogMode === 'paste') {
         const value = field.value;
