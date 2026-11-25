@@ -6,7 +6,8 @@ import { chromium } from 'playwright';
 
 // QA inventory: native and fallback clipboard, selection vs Ctrl+C, Unicode /
 // multiline paste, history/download/latest, modal close/Escape, ingress iframe,
-// disconnected session, narrow/mobile and desktop layouts. No HA/model calls.
+// disconnected session, dictation with a simulated speech service, mobile
+// keyboard viewport changes and desktop layouts. No HA/model calls.
 const name = `codex-browser-${process.pid}`;
 const image = process.env.TEST_IMAGE || 'codex-addon-review:0.5.2';
 const basePath = '/api/hassio_ingress/fixture';
@@ -186,6 +187,69 @@ async function fit(page) {
   assert.ok(bounds.scrollWidth <= bounds.width, JSON.stringify(bounds));
 }
 
+test('mobile keyboard leaves the terminal draft and paste field in the visible viewport', async () => {
+  for (const framed of [false, true]) {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    try {
+      await context.addInitScript(() => {
+        Object.defineProperty(navigator, 'clipboard', { value: undefined });
+        if (window !== window.top) return;
+        // Android can resize and pan just the visual viewport of the top-level page.
+        const viewport = Object.assign(new EventTarget(), { height: window.visualViewport.height, offsetTop: 0, scale: 1 });
+        Object.defineProperty(window, 'visualViewport', { value: viewport });
+      });
+      const page = await context.newPage();
+      if (framed) {
+        await page.route('**/keyboard-frame', route => route.fulfill({ contentType: 'text/html',
+          body: `<meta name="viewport" content="width=device-width, initial-scale=1"><iframe src="${url}" style="position:fixed;top:48px;left:0;width:100%;height:calc(100% - 48px);box-sizing:border-box;border:0;padding-top:8px"></iframe>` }));
+        await page.goto(new URL('/keyboard-frame', url).href);
+      } else await page.goto(url);
+      const terminal = framed ? page.frames().find(frame => frame.url() === url) : page;
+      await terminal.locator('#codex-toolbar').waitFor();
+      await waitText(terminal, 'bash-');
+      const rowsBefore = await terminal.evaluate(() => term.rows);
+      const helper = terminal.locator('.xterm-helper-textarea');
+      await helper.focus();
+      await page.keyboard.insertText('# draft before');
+      await page.evaluate(() => {
+        Object.assign(visualViewport, { height: 410, offsetTop: 68 });
+        visualViewport.dispatchEvent(new Event('resize'));
+        visualViewport.dispatchEvent(new Event('scroll'));
+      });
+
+      const checkBounds = async selector => {
+        await terminal.waitForFunction(({ selector, frameTop }) => {
+          const bounds = document.querySelector(selector).getBoundingClientRect();
+          return bounds.top + frameTop >= 68 && bounds.bottom + frameTop <= 478;
+        }, { selector, frameTop: framed ? 56 : 0 });
+      };
+      await checkBounds('#codex-toolbar');
+      await checkBounds('#terminal-container');
+      await checkBounds('.xterm-screen');
+      assert.ok(await terminal.evaluate(() => term.rows) < rowsBefore);
+      assert.equal(await helper.evaluate(el => el === document.activeElement), true);
+      await page.keyboard.insertText(' and after');
+      await waitText(terminal, '# draft before and after');
+
+      await terminal.locator('#paste').click();
+      await terminal.locator('#codex-dialog[open]').waitFor();
+      await checkBounds('#codex-dialog');
+      await checkBounds('#dialog-action');
+      await terminal.locator('#dialog-close').click();
+
+      await page.evaluate(() => {
+        Object.assign(visualViewport, { height: innerHeight, offsetTop: 0 });
+        visualViewport.dispatchEvent(new Event('resize'));
+      });
+      await terminal.waitForFunction(rows => term.rows === rows, rowsBefore);
+      await fit(terminal);
+      await waitText(terminal, '# draft before and after');
+    } finally {
+      await context.close();
+    }
+  }
+});
+
 test('native clipboard, terminal selection, history, responsive layout and reconnect', async () => {
   const context = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'], viewport: { width: 1200, height: 800 } });
   const page = await context.newPage();
@@ -284,5 +348,94 @@ test('clipboard denied in HA-style iframe: fallback copy and multiline paste', a
   assert.equal(await field.inputValue(), '');
   await page.keyboard.press('Escape');
   await context.close();
+});
+
+test('dictation inserts final results at the terminal cursor and leaves Enter to the user', async () => {
+  for (const mobile of [false, true]) {
+    const context = await browser.newContext({ locale: 'fr-CA', ...(mobile ? {
+      isMobile: true, hasTouch: true, viewport: { width: 390, height: 844 }, userAgent: 'Mozilla/5.0 (Linux; Android 16)',
+    } : {}) });
+    try {
+      await context.addInitScript(() => {
+        window.SpeechRecognition = undefined;
+        window.webkitSpeechRecognition = class {
+          start() { window.speech = this; this.onaudiostart(); }
+          stop() { this.onaudioend(); }
+          abort() { this.aborted = true; this.onend(); }
+          result(resultIndex, transcripts) {
+            this.onresult({ resultIndex, results: transcripts.map(transcript => ({
+              0: { transcript }, isFinal: true,
+            })) });
+          }
+        };
+      });
+      const page = await context.newPage();
+      if (mobile) {
+        await page.route('**/dictation-frame', route => route.fulfill({ contentType: 'text/html',
+          body: `<meta name="viewport" content="width=device-width, initial-scale=1"><iframe src="${url}" style="position:fixed;inset:0;border:0;width:100%;height:100%"></iframe>` }));
+        await page.goto(new URL('/dictation-frame', url).href);
+      } else await page.goto(url);
+      const terminal = mobile ? page.frames().find(frame => frame.url() === url) : page;
+      const dictate = terminal.locator('#dictate');
+      await dictate.waitFor();
+      await waitText(terminal, 'bash-');
+      await terminal.locator('.xterm-helper-textarea').focus();
+      await page.keyboard.insertText('# Note : ');
+      await terminal.evaluate(() => { window.dictatedInput = ''; term.onData(data => { window.dictatedInput += data; }); });
+
+      await dictate.click();
+      assert.equal(await dictate.getAttribute('aria-label'), 'Arrêter la dictée');
+      assert.match(await terminal.locator('#codex-toolbar [role=status]').innerText(), /Écoute en cours/);
+      assert.deepEqual(await terminal.evaluate(() => [speech.lang, speech.continuous]), ['fr-CA', !mobile]);
+      if (!mobile) await dictate.click();
+      assert.equal(await terminal.evaluate(() => window.dictatedInput), '');
+      await terminal.evaluate(() => {
+        speech.result(0, ['Déjà prêt.']);
+        speech.result(1, ['Déjà prêt.', 'Ça\nmarche.\u0003']);
+        speech.onend();
+      });
+      await waitText(terminal, '# Note : Déjà prêt. Ça marche.');
+      const input = await terminal.evaluate(() => window.dictatedInput);
+      assert.equal(input.replace(/^\x1b\[200~|\x1b\[201~$/g, ''), 'Déjà prêt. Ça marche.');
+      assert.equal(await dictate.innerText(), 'Dicter');
+      await fit(terminal);
+
+      // Enter during a second dictation sends the current draft and discards late speech.
+      await dictate.click();
+      await terminal.locator('.xterm-helper-textarea').focus();
+      await page.keyboard.press('Enter');
+      assert.equal(await terminal.evaluate(() => speech.aborted), true);
+      await terminal.evaluate(() => { speech.result(0, ['Texte en retard']); speech.onend(); });
+      assert.equal(await terminal.evaluate(() => window.dictatedInput), input + '\r');
+    } finally {
+      await context.close();
+    }
+  }
+});
+
+test('denied microphone offers editable keyboard dictation and inserts a single line', async () => {
+  const context = await browser.newContext({ isMobile: true, hasTouch: true, viewport: { width: 360, height: 640 } });
+  try {
+    // Keep the API available so the test reaches the iframe microphone policy check.
+    await context.addInitScript(() => { window.SpeechRecognition = class {}; });
+    const page = await context.newPage();
+    await page.route('**/blocked-microphone', route => route.fulfill({ contentType: 'text/html',
+      body: `<meta name="viewport" content="width=device-width, initial-scale=1"><iframe src="${url}" allow="microphone 'none'" style="position:fixed;inset:0;border:0;width:100%;height:100%"></iframe>` }));
+    await page.goto(new URL('/blocked-microphone', url).href);
+    const frame = page.frames().find(child => child.url() === url);
+    await frame.locator('#dictate').tap();
+    const dialog = frame.locator('#codex-dialog');
+    assert.match(await dialog.locator('p').innerText(), /Microphone access denied.*keyboard has a microphone/);
+    await waitText(frame, 'bash-');
+    await frame.evaluate(() => { window.dictatedInput = ''; term.onData(data => { window.dictatedInput += data; }); });
+    await dialog.locator('textarea').fill('# Keyboard dictation\nsecond line');
+    assert.equal(await frame.evaluate(() => window.dictatedInput), '');
+    await dialog.getByRole('button', { name: 'Insert' }).tap();
+    await dialog.waitFor({ state: 'hidden' });
+    const input = await frame.evaluate(() => window.dictatedInput);
+    assert.equal(input.replace(/^\x1b\[200~|\x1b\[201~$/g, ''), '# Keyboard dictation second line');
+  } finally {
+    await context.close();
+  }
 });
 

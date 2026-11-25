@@ -12,6 +12,15 @@
     historyHint: 'Historique disponible dans ce navigateur. Vous pouvez sélectionner, copier ou télécharger le texte.',
     historyTitle: 'Historique du terminal', empty: 'Aucun texte à insérer.',
     inserted: 'Texte inséré dans le terminal.', latestHint: 'Retour au bas du terminal.',
+    dictate: 'Dicter', stop: 'Arrêter', stopDictation: 'Arrêter la dictée',
+    dictationStarting: 'Activation du micro…', dictationListening: 'Écoute en cours. Cliquez sur Arrêter pour terminer.',
+    dictationFinishing: 'Transcription en cours…', dictationEmpty: 'Aucune parole détectée. Réessayez.',
+    dictationCancelled: 'Dictée annulée.', dictationInserted: 'Dictée insérée. Relisez le texte, puis appuyez sur Entrée pour l’envoyer.',
+    dictationHttps: 'Ouvrez Home Assistant en HTTPS pour utiliser le micro du navigateur.',
+    dictationBlocked: 'Accès au micro refusé. Vérifiez les permissions de Home Assistant et du navigateur.',
+    dictationUnavailable: 'La dictée intégrée est indisponible dans cette vue.',
+    dictationFailed: 'Le service de dictée n’a pas pu transcrire votre voix.',
+    dictationKeyboard: 'Si votre clavier propose un micro, touchez le champ et utilisez-le, puis cliquez sur Insérer.',
     image: 'Image', uploading: 'Envoi de l’image…', imageReady: 'Image enregistrée, chemin inséré. Ajoutez votre demande puis appuyez sur Entrée.',
     imageFailed: 'Impossible d’envoyer l’image. Réessayez ou utilisez le bouton Image.',
     imageSize: 'Choisissez une image PNG, JPEG, GIF ou WebP de moins de 10 Mo.',
@@ -26,6 +35,15 @@
     historyHint: 'History available in this browser. Select, copy or download the text.',
     historyTitle: 'Terminal history', empty: 'No text to insert.',
     inserted: 'Text inserted into the terminal.', latestHint: 'Returned to the latest output.',
+    dictate: 'Dictate', stop: 'Stop', stopDictation: 'Stop dictation',
+    dictationStarting: 'Starting microphone…', dictationListening: 'Listening. Select Stop when you’re done.',
+    dictationFinishing: 'Transcribing…', dictationEmpty: 'No speech detected. Try again.',
+    dictationCancelled: 'Dictation canceled.', dictationInserted: 'Dictation inserted. Review the text, then press Enter to send it.',
+    dictationHttps: 'Open Home Assistant over HTTPS to use the browser microphone.',
+    dictationBlocked: 'Microphone access denied. Check the Home Assistant and browser permissions.',
+    dictationUnavailable: 'Built-in dictation is unavailable in this view.',
+    dictationFailed: 'The dictation service could not transcribe your voice.',
+    dictationKeyboard: 'If your keyboard has a microphone, tap the field and use it, then select Insert.',
     image: 'Image', uploading: 'Uploading image…', imageReady: 'Image saved, path inserted. Add your request, then press Enter.',
     imageFailed: 'Image upload failed. Try again or use the Image button.',
     imageSize: 'Choose a PNG, JPEG, GIF or WebP image smaller than 10 MB.',
@@ -37,7 +55,7 @@
     const toolbar = document.createElement('section');
     toolbar.id = 'codex-toolbar';
     toolbar.setAttribute('aria-label', 'Codex terminal');
-    toolbar.innerHTML = `<div class="actions"><strong>Codex</strong><button id="copy">${text.copy}</button><button id="paste">${text.paste}</button><button id="image">${text.image}</button><button id="history">${text.history}</button><button id="latest">${text.latest}</button></div><p role="status" aria-live="polite"></p>`;
+    toolbar.innerHTML = `<div class="actions"><strong>Codex</strong><button id="copy">${text.copy}</button><button id="paste">${text.paste}</button><button id="dictate">${text.dictate}</button><button id="image">${text.image}</button><button id="history">${text.history}</button><button id="latest">${text.latest}</button></div><p role="status" aria-live="polite"></p>`;
     document.body.append(toolbar);
     const status = toolbar.querySelector('[role=status]');
     status.textContent = text.hint;
@@ -61,11 +79,57 @@
       if (event.target.closest('button')) event.preventDefault();
     });
 
+    // Ingress uses a same-origin iframe. The Android keyboard can shrink the
+    // host's visual viewport while leaving the iframe's layout size unchanged.
+    const views = [];
+    for (let view = window; ; view = view.parent) {
+      const frame = view.frameElement;
+      views.push({ view, frame });
+      if (!frame) break;
+    }
     const fit = () => {
-      document.documentElement.style.setProperty('--toolbar-height', `${toolbar.offsetHeight}px`);
+      let top = 0;
+      let bottom = window.innerHeight;
+      let frameTop = 0;
+      for (const { view, frame } of views) {
+        const viewport = view.visualViewport;
+        // Keep the layout stable during pinch zoom.
+        if (viewport?.height > 0 && viewport.scale === 1) {
+          top = Math.max(top, viewport.offsetTop - frameTop);
+          bottom = Math.min(bottom, viewport.offsetTop + viewport.height - frameTop);
+        }
+        if (frame) {
+          const padding = view.parent.getComputedStyle(frame).paddingTop;
+          frameTop += frame.getBoundingClientRect().top + frame.clientTop + parseFloat(padding);
+        }
+      }
+      const style = document.documentElement.style;
+      style.setProperty('--viewport-top', `${Math.ceil(top)}px`);
+      style.setProperty('--viewport-bottom', `${Math.ceil(window.innerHeight - bottom)}px`);
+      style.setProperty('--toolbar-height', `${toolbar.offsetHeight}px`);
       term.fit();
     };
-    new ResizeObserver(fit).observe(toolbar);
+    const listeners = new AbortController();
+    const options = { passive: true, signal: listeners.signal };
+    let pendingFit = 0;
+    const scheduleFit = () => {
+      if (pendingFit) return;
+      pendingFit = requestAnimationFrame(() => { pendingFit = 0; fit(); });
+    };
+    const observer = new ResizeObserver(scheduleFit);
+    observer.observe(toolbar);
+    for (const { view, frame } of views) {
+      view.addEventListener('resize', scheduleFit, options);
+      view.visualViewport?.addEventListener('resize', scheduleFit, options);
+      view.visualViewport?.addEventListener('scroll', scheduleFit, options);
+      if (frame) observer.observe(frame);
+    }
+    window.addEventListener('pagehide', event => {
+      if (event.persisted) return;
+      listeners.abort();
+      observer.disconnect();
+      cancelAnimationFrame(pendingFit);
+    });
     term.options.macOptionClickForcesSelection = true;
 
     // xterm 5.4 skips touch scrolling while application mouse reporting is on.
@@ -129,13 +193,15 @@
       }
     });
 
-    function show(mode, value = '') {
+    function show(mode, value = '', help) {
+      cancelDictation();
       dialogMode = mode;
+      const editable = mode === 'paste' || mode === 'dictate';
       dialog.querySelector('h2').textContent = mode === 'history' ? text.historyTitle : text[mode];
-      dialog.querySelector('p').textContent = mode === 'paste' ? text.manualPaste : mode === 'history' ? text.historyHint : text.manualCopy;
-      field.readOnly = mode !== 'paste';
+      dialog.querySelector('p').textContent = help ?? (mode === 'paste' ? text.manualPaste : mode === 'history' ? text.historyHint : text.manualCopy);
+      field.readOnly = !editable;
       field.value = value;
-      action.textContent = mode === 'paste' ? text.insert : text.copy;
+      action.textContent = editable ? text.insert : text.copy;
       dialog.querySelector('#dialog-download').hidden = mode !== 'history';
       if (!dialog.open) dialog.showModal();
       field.focus();
@@ -166,13 +232,128 @@
         } catch { /* Native menu / keyboard copy remains available. */ }
       }
     }
-    function insert(value) {
+    function insert(value, message = text.inserted) {
       if (!value) { status.textContent = text.empty; return; }
       // xterm handles bracketed paste; never send text as synthetic key events.
       term.paste(value);
-      status.textContent = text.inserted;
+      status.textContent = message;
       term.focus();
     }
+
+    const dictateButton = toolbar.querySelector('#dictate');
+    let dictation;
+
+    function insertDictation(value) {
+      // Keep line breaks and terminal control characters out of dictated input.
+      const transcript = value.replace(/[\t\r\n\u0085\u2028\u2029]+/g, ' ')
+        .replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim();
+      if (transcript) insert(transcript, text.dictationInserted);
+      return Boolean(transcript);
+    }
+
+    function resetDictation(session) {
+      if (dictation !== session) return false;
+      clearTimeout(session.timeout);
+      dictation = undefined;
+      dictateButton.disabled = false;
+      dictateButton.textContent = text.dictate;
+      dictateButton.removeAttribute('aria-label');
+      dictateButton.removeAttribute('data-listening');
+      return true;
+    }
+
+    function cancelDictation() {
+      if (!dictation) return;
+      const session = dictation;
+      resetDictation(session);
+      session.recognition.abort();
+      status.textContent = text.dictationCancelled;
+    }
+
+    function dictationFallback(reason) {
+      status.textContent = reason;
+      show('dictate', '', `${reason} ${text.dictationKeyboard}`);
+    }
+
+    function finishDictation(session, failure) {
+      if (!resetDictation(session)) return;
+      if (window.term !== term || term.options.disableStdin) {
+        status.textContent = text.dictationCancelled;
+        return;
+      }
+      if (insertDictation(session.results.filter(Boolean).join(' '))) return;
+      if (failure) dictationFallback(failure);
+      else status.textContent = text.dictationEmpty;
+    }
+
+    function watchDictation(session, timeout) {
+      clearTimeout(session.timeout);
+      session.timeout = setTimeout(() => {
+        finishDictation(session, text.dictationFailed);
+        session.recognition.abort();
+      }, timeout);
+    }
+
+    function transcribing(session) {
+      if (dictation !== session || dictateButton.disabled) return;
+      dictateButton.disabled = true;
+      dictateButton.removeAttribute('data-listening');
+      status.textContent = text.dictationFinishing;
+      watchDictation(session, 15000);
+    }
+
+    dictateButton.onclick = () => {
+      if (dictation) {
+        const session = dictation;
+        transcribing(session);
+        try { session.recognition.stop(); }
+        catch { finishDictation(session, text.dictationFailed); }
+        return;
+      }
+      if (!window.isSecureContext) { dictationFallback(text.dictationHttps); return; }
+      const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!Recognition) { dictationFallback(text.dictationUnavailable); return; }
+      const policy = document.permissionsPolicy || document.featurePolicy;
+      if (policy && !policy.allowsFeature('microphone')) { dictationFallback(text.dictationBlocked); return; }
+
+      const recognition = new Recognition();
+      const session = { recognition, results: [] };
+      recognition.lang = navigator.language;
+      // Android's speech service can finish on a pause, even in continuous mode.
+      recognition.continuous = !/Android/i.test(navigator.userAgent);
+      recognition.onaudiostart = () => {
+        if (dictation !== session || dictateButton.disabled) return;
+        clearTimeout(session.timeout);
+        dictateButton.setAttribute('data-listening', '');
+        status.textContent = text.dictationListening;
+      };
+      recognition.onaudioend = () => transcribing(session);
+      recognition.onresult = event => {
+        if (dictation !== session) return;
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          if (result.isFinal) session.results[i] = result[0].transcript.trim();
+        }
+      };
+      recognition.onerror = event => {
+        const blocked = ['not-allowed', 'service-not-allowed', 'audio-capture'].includes(event.error);
+        const failure = blocked ? text.dictationBlocked : text.dictationFailed;
+        finishDictation(session, event.error === 'no-speech' ? undefined : failure);
+      };
+      recognition.onend = () => finishDictation(session);
+
+      dictation = session;
+      dictateButton.textContent = text.stop;
+      dictateButton.setAttribute('aria-label', text.stopDictation);
+      status.textContent = text.dictationStarting;
+      watchDictation(session, 30000);
+      try { recognition.start(); }
+      catch { finishDictation(session, text.dictationFailed); }
+    };
+    // A submitted or interrupted prompt is no longer the draft we were dictating.
+    term.onData(value => { if (dictation && /[\r\n\u0003\u0004]/.test(value)) cancelDictation(); });
+    window.addEventListener('pagehide', cancelDictation);
+
     let uploading = false;
     const imageTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
     const uploadUrl = kind => new URL(`${location.pathname.replace(/\/?$/, '/')}codex-upload-${kind}`, location.origin);
@@ -264,7 +445,10 @@
     dialog.querySelector('#dialog-close').onclick = () => dialog.close();
     dialog.addEventListener('close', () => { field.value = ''; term.focus(); });
     action.onclick = () => {
-      if (dialogMode === 'paste') {
+      if (dialogMode === 'dictate') {
+        if (insertDictation(field.value)) dialog.close();
+        else status.textContent = text.empty;
+      } else if (dialogMode === 'paste') {
         const value = field.value;
         dialog.close();
         insert(value);
