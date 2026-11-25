@@ -55,7 +55,7 @@ RUN case "${BUILD_ARCH}" in \
     echo "${TTYD_SHA256}  /usr/bin/ttyd" | sha256sum -c - && \
     chmod +x /usr/bin/ttyd
 
-ARG CODEX_VERSION=0.164.0
+ARG CODEX_VERSION=0.172.0
 RUN NPM_CONFIG_CACHE=/tmp/npm-cache npm install -g "@openai/codex@${CODEX_VERSION}" \
     && codex --version \
     && rm -rf /tmp/npm-cache
